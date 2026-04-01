@@ -1,0 +1,14 @@
+{
+  "name": "Kiss booster",
+  "api": "1.0.0",
+  "main": "dist/src/code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "capabilities": [],
+  "networkAccess": {
+    "allowedDomains": [
+      "https://translate.googleapis.com"
+    ],
+    "reasoning": "Uses Google Translate API for text translation."
+  }
+}
