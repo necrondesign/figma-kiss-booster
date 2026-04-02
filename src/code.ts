@@ -11,6 +11,7 @@ function sendStatus(text: string, status: "success" | "error" | "") {
 }
 
 async function findDarkMode(): Promise<{ collection: VariableCollection; modeId: string } | null> {
+  // 1. Try local collections
   const collections = await figma.variables.getLocalVariableCollectionsAsync();
   for (const collection of collections) {
     const darkMode = collection.modes.find(
@@ -20,6 +21,45 @@ async function findDarkMode(): Promise<{ collection: VariableCollection; modeId:
       return { collection, modeId: darkMode.modeId };
     }
   }
+
+  // 2. Not found locally — scan bound variables in selection for library collections
+  const checkedIds = new Set(collections.map((c) => c.id));
+  const queue: SceneNode[] = [...figma.currentPage.selection];
+  let checked = 0;
+
+  while (queue.length > 0 && checked < 50) {
+    const node = queue.shift()!;
+    checked++;
+
+    if ("boundVariables" in node) {
+      const bv = node.boundVariables as Record<string, any> | undefined;
+      if (bv) {
+        for (const val of Object.values(bv)) {
+          const bindings = Array.isArray(val) ? val : val ? [val] : [];
+          for (const b of bindings) {
+            if (!b?.id) continue;
+            try {
+              const v = await figma.variables.getVariableByIdAsync(b.id);
+              if (!v || checkedIds.has(v.variableCollectionId)) continue;
+              checkedIds.add(v.variableCollectionId);
+              const col = await figma.variables.getVariableCollectionByIdAsync(v.variableCollectionId);
+              if (col) {
+                const dark = col.modes.find((m) => m.name.toLowerCase() === "dark");
+                if (dark) return { collection: col, modeId: dark.modeId };
+              }
+            } catch (_e) {}
+          }
+        }
+      }
+    }
+
+    if ("children" in node) {
+      for (const child of (node as ChildrenMixin & SceneNode).children) {
+        queue.push(child as SceneNode);
+      }
+    }
+  }
+
   return null;
 }
 
@@ -27,22 +67,33 @@ async function findVariable(name: string): Promise<Variable | null> {
   // Get ALL local variables (no type filter)
   const allVars = await figma.variables.getLocalVariablesAsync();
 
-  const search = (vars: Variable[]) => {
-    // 1. Exact match
+  const search = (vars: Array<{ name: string }>) => {
     const exact = vars.find((v) => v.name === name);
     if (exact) return exact;
-    // 2. Match by last path segment
     const byEnd = vars.find((v) => v.name.endsWith("/" + name));
     if (byEnd) return byEnd;
-    // 3. Partial case-insensitive
     const partial = vars.find((v) => v.name.toLowerCase().includes(name.toLowerCase()));
     return partial ?? null;
   };
 
   const found = search(allVars);
-  if (found) return found;
+  if (found) return found as Variable;
 
-  figma.notify(`⚠ Variable "${name}" not found (searched ${allVars.length} vars)`, { timeout: 5000 });
+  // Not found locally — search in library collections
+  try {
+    const libCollections = await figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync();
+    for (const libCol of libCollections) {
+      const libVars = await figma.teamLibrary.getVariablesInLibraryCollectionAsync(libCol.key);
+      const match = search(libVars);
+      if (match) {
+        return await figma.variables.importVariableByKeyAsync((match as LibraryVariable).key);
+      }
+    }
+    figma.notify(`⚠ "${name}" not found (${allVars.length} local, ${libCollections.length} libs)`, { timeout: 5000 });
+  } catch (e) {
+    figma.notify(`⚠ Library search error: ${e}`, { timeout: 5000 });
+  }
+
   return null;
 }
 
@@ -256,10 +307,15 @@ async function wrapToNewSelection(): Promise<void> {
   // Apply fill token
   const fillVar = await findVariable("default_system_frame");
   if (fillVar) {
-    const baseFill: SolidPaint = { type: "SOLID", color: { r: 1, g: 1, b: 1 } };
-    section.fills = [figma.variables.setBoundVariableForPaint(baseFill, "color", fillVar)];
+    try {
+      const baseFill: SolidPaint = { type: "SOLID", color: { r: 1, g: 1, b: 1 } };
+      const boundFill = figma.variables.setBoundVariableForPaint(baseFill, "color", fillVar);
+      section.fills = [boundFill];
+    } catch (_e) {
+      figma.notify("⚠ Could not bind fill variable to section", { timeout: 3000 });
+    }
   } else {
-    figma.notify("⚠ Variable \"default_system_frame\" not found");
+    figma.notify("⚠ Variable \"default_system_frame\" not found", { timeout: 3000 });
   }
 
   // Move all frames into the section
@@ -442,6 +498,100 @@ async function alignSections(): Promise<void> {
   sendStatus(`${sections.length} sections aligned`, "success");
 }
 
+// ─── Feature: Toggle Ready for Dev ──────────────────────────────
+
+async function toggleDevStatus(): Promise<void> {
+  const selection = [...figma.currentPage.selection];
+
+  let targets: SceneNode[] = [];
+
+  if (selection.length > 0) {
+    // Use selected nodes that support devStatus
+    targets = selection.filter((n) => "devStatus" in n);
+  } else {
+    // No selection — collect all top-level frames/sections on the page
+    for (const child of figma.currentPage.children) {
+      if ("devStatus" in child) targets.push(child);
+    }
+  }
+
+  if (targets.length === 0) return;
+
+  // Determine direction: if ANY target is not ready → set all to ready, otherwise clear all
+  const allReady = targets.every(
+    (n) => (n as FrameNode).devStatus?.type === "READY_FOR_DEV"
+  );
+
+  for (const node of targets) {
+    (node as FrameNode).devStatus = allReady
+      ? null
+      : { type: "READY_FOR_DEV" };
+  }
+}
+
+// ─── Feature: Smart Copy ────────────────────────────────────────
+
+async function smartCopy(): Promise<void> {
+  const selection = [...figma.currentPage.selection];
+
+  if (selection.length === 0) {
+    sendStatus("Select a frame", "error");
+    return;
+  }
+
+  const node = selection[0];
+  if (!("clone" in node)) {
+    sendStatus("Can't clone this node", "error");
+    return;
+  }
+
+  const clone = (node as FrameNode).clone();
+  clone.x = node.x + node.width + H_GAP;
+  clone.y = node.y;
+
+  // If inside a section, expand section and cascade-shift neighbors
+  const parentSection = node.parent;
+  if (parentSection && parentSection.type === "SECTION") {
+    parentSection.appendChild(clone);
+    clone.x = node.x + node.width + H_GAP;
+    clone.y = node.y;
+
+    // Expand section to fit the new clone
+    let maxX = 0;
+    for (const child of parentSection.children) {
+      const right = child.x + child.width;
+      if (right > maxX) maxX = right;
+    }
+    const newWidth = maxX + SECTION_PADDING;
+    const expandAmount = newWidth - parentSection.width;
+
+    if (expandAmount > 0) {
+      parentSection.resizeWithoutConstraints(newWidth, parentSection.height);
+
+      // Cascade-shift sections to the right
+      const allPageSections: SectionNode[] = [];
+      for (const child of figma.currentPage.children) {
+        if (child.type === "SECTION") allPageSections.push(child);
+      }
+
+      const rightSections = allPageSections
+        .filter((s) => s !== parentSection && s.x >= parentSection.x)
+        .sort((a, b) => a.x - b.x);
+
+      let prevRight = parentSection.x + parentSection.width;
+      for (const other of rightSections) {
+        const gap = other.x - prevRight;
+        if (gap >= SECTION_GAP) break;
+        other.x = prevRight + SECTION_GAP;
+        prevRight = other.x + other.width;
+      }
+    }
+  }
+
+  figma.currentPage.selection = [clone];
+  figma.viewport.scrollAndZoomIntoView([clone]);
+}
+
 // ─── Feature 5: Expand Section ───────────────────────────────────
 
 const MIN_GAP = 80;
@@ -455,6 +605,12 @@ async function expandSection(): Promise<void> {
     return;
   }
 
+  // Collect all sections on the page to shift neighbors
+  const allPageSections: SectionNode[] = [];
+  for (const child of figma.currentPage.children) {
+    if (child.type === "SECTION") allPageSections.push(child);
+  }
+
   for (const section of sections) {
     // Get top-row children (light frames, skip sections and dark copies)
     const children: SceneNode[] = [];
@@ -464,30 +620,44 @@ async function expandSection(): Promise<void> {
       children.push(child);
     }
 
+    let expandAmount: number;
+
     if (children.length === 0) {
-      section.resizeWithoutConstraints(section.width + MIN_GAP + 540, section.height);
-      continue;
+      expandAmount = MIN_GAP + 540;
+    } else {
+      // Sort by x to find gaps and last object
+      children.sort((a, b) => a.x - b.x);
+
+      // Calculate gaps between consecutive objects
+      const gaps: number[] = [];
+      for (let i = 1; i < children.length; i++) {
+        const prevRight = children[i - 1].x + children[i - 1].width;
+        const gap = children[i].x - prevRight;
+        if (gap > 0) gaps.push(gap);
+      }
+
+      const gapSize = gaps.length > 0 ? gaps[0] : MIN_GAP;
+      const lastWidth = children[children.length - 1].width;
+      expandAmount = gapSize + lastWidth;
     }
-
-    // Sort by x to find gaps and last object
-    children.sort((a, b) => a.x - b.x);
-
-    // Calculate gaps between consecutive objects
-    const gaps: number[] = [];
-    for (let i = 1; i < children.length; i++) {
-      const prevRight = children[i - 1].x + children[i - 1].width;
-      const gap = children[i].x - prevRight;
-      if (gap > 0) gaps.push(gap);
-    }
-
-    const gapSize = gaps.length > 0 ? gaps[0] : MIN_GAP;
-    const lastWidth = children[children.length - 1].width;
-    const expandAmount = gapSize + lastWidth;
 
     section.resizeWithoutConstraints(section.width + expandAmount, section.height);
+
+    // Cascade-shift sections to the right if gap < SECTION_GAP
+    const rightSections = allPageSections
+      .filter((s) => s !== section && s.x >= section.x)
+      .sort((a, b) => a.x - b.x);
+
+    let prevRight = section.x + section.width;
+    for (const other of rightSections) {
+      const gap = other.x - prevRight;
+      if (gap >= SECTION_GAP) break;
+      other.x = prevRight + SECTION_GAP;
+      prevRight = other.x + other.width;
+    }
   }
 
-  sendStatus(`${sections.length} expanded`, "success");
+  // No status — expand is instant, no Done delay
 }
 
 // ─── Feature 6: Fix Selection ────────────────────────────────────
@@ -909,6 +1079,12 @@ figma.ui.onmessage = async (msg: { type: string }) => {
       break;
     case "expand-section":
       await expandSection();
+      break;
+    case "smart-copy":
+      await smartCopy();
+      break;
+    case "toggle-dev-status":
+      await toggleDevStatus();
       break;
     case "fix-selection":
       await fixSelection();

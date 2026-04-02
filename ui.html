@@ -296,7 +296,7 @@
         <div class="status empty" id="status-fix">Select elements</div>
         <div class="btn-row">
           <button class="btn btn-secondary" id="btn-fix" onclick="send('fix-selection')">Fix selection</button>
-          <button class="btn btn-secondary" id="btn-expand" onclick="send('expand-section')">Expand selection</button>
+          <button class="btn btn-secondary" id="btn-expand" onclick="sendInstant('expand-section')">Expand selection</button>
         </div>
       </div>
     </div>
@@ -304,8 +304,14 @@
     <div class="section">
       <div class="section-label">Other</div>
       <div class="other-buttons">
-        <button class="btn btn-primary" id="btn-align" onclick="send('align-sections')">Align all sections</button>
-        <button class="btn btn-primary" id="btn-frame" onclick="send('frame-border')">Make 1px gap</button>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btn-align" onclick="send('align-sections')">Align sections</button>
+          <button class="btn btn-primary" id="btn-copy" onclick="sendInstant('smart-copy')">Smart copy</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btn-frame" onclick="send('frame-border')">Make 1px gap</button>
+          <button class="btn btn-primary" id="btn-dev" onclick="sendInstant('toggle-dev-status')">Ready for dev</button>
+        </div>
       </div>
     </div>
 
@@ -387,6 +393,10 @@
     btn.className = 'btn btn-processing';
     btn.disabled = true;
     btn.innerHTML = '<span class="loader"></span>Processing';
+    parent.postMessage({ pluginMessage: { type: action } }, '*');
+  }
+
+  function sendInstant(action) {
     parent.postMessage({ pluginMessage: { type: action } }, '*');
   }
 
