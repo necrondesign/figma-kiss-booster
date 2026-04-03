@@ -9,7 +9,7 @@
     color: #fff;
     background: #2c2c2c;
     width: 320px;
-    overflow-x: hidden;
+    overflow: hidden;
   }
 
   /* Tabs */
@@ -304,13 +304,17 @@
   /* Collapsed mode */
   .expanded-view { display: block; }
   .collapsed-view { display: none; }
-  body.collapsed { overflow: hidden; }
   body.collapsed .expanded-view { display: none; }
   body.collapsed .collapsed-view { display: block; }
   body.collapsed .tab-content.active { display: block; }
 
   .compact-grid {
     padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .compact-buttons {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -362,15 +366,11 @@
 
       <div class="section">
         <div class="section-label">Other</div>
-        <div class="other-buttons">
-          <div class="btn-row">
-            <button class="btn btn-primary" id="btn-align" onclick="send('align-sections')">Align sections</button>
-            <button class="btn btn-primary" id="btn-copy" onclick="sendInstant('smart-copy')">Smart copy</button>
-          </div>
-          <div class="btn-row">
-            <button class="btn btn-primary" id="btn-frame" onclick="send('frame-border')">Make 1px gap</button>
-            <button class="btn btn-primary" id="btn-dev" onclick="sendInstant('toggle-dev-status')">Ready for dev</button>
-          </div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" id="btn-align" onclick="send('align-sections')">Align</button>
+          <button class="btn btn-secondary" id="btn-copy" onclick="sendInstant('smart-copy')">Copy</button>
+          <button class="btn btn-secondary" id="btn-frame" onclick="send('frame-border')">1px</button>
+          <button class="btn btn-secondary" id="btn-dev" onclick="sendInstant('toggle-dev-status')">Dev</button>
         </div>
       </div>
     </div>
@@ -378,16 +378,18 @@
     <!-- Collapsed -->
     <div class="collapsed-view">
       <div class="compact-grid">
-        <div class="compact-row">
-          <button class="btn btn-primary" id="c-btn-wrap" onclick="send('wrap-selection')">Wrap</button>
-          <button class="btn btn-secondary" id="c-btn-fix" onclick="send('fix-selection')">Fix</button>
-          <button class="btn btn-secondary" id="c-btn-expand" onclick="sendInstant('expand-section')">Expand</button>
-        </div>
-        <div class="compact-row">
-          <button class="btn btn-secondary" id="c-btn-align" onclick="send('align-sections')">Align</button>
-          <button class="btn btn-secondary" id="c-btn-copy" onclick="sendInstant('smart-copy')">Copy</button>
-          <button class="btn btn-secondary" id="c-btn-frame" onclick="send('frame-border')">1px</button>
-          <button class="btn btn-secondary" id="c-btn-dev" onclick="sendInstant('toggle-dev-status')">Dev</button>
+        <div class="compact-buttons">
+          <div class="compact-row">
+            <button class="btn btn-primary" id="c-btn-wrap" onclick="send('wrap-selection')">Wrap</button>
+            <button class="btn btn-secondary" id="c-btn-fix" onclick="send('fix-selection')">Fix</button>
+            <button class="btn btn-secondary" id="c-btn-expand" onclick="sendInstant('expand-section')">Expand</button>
+          </div>
+          <div class="compact-row">
+            <button class="btn btn-secondary" id="c-btn-align" onclick="send('align-sections')">Align</button>
+            <button class="btn btn-secondary" id="c-btn-copy" onclick="sendInstant('smart-copy')">Copy</button>
+            <button class="btn btn-secondary" id="c-btn-frame" onclick="send('frame-border')">1px</button>
+            <button class="btn btn-secondary" id="c-btn-dev" onclick="sendInstant('toggle-dev-status')">Dev</button>
+          </div>
         </div>
       </div>
     </div>
@@ -451,14 +453,19 @@
   <div class="dropdown-menu" id="lang-menu" style="display:none;position:fixed;"></div>
 
 <script>
-  const EXPANDED_HEIGHT = 470;
-  const COLLAPSED_HEIGHT = 165;
+  const COLLAPSED_HEIGHT = 160;
+  const TAB_HEIGHTS = { tools: 420, art: 190, translator: 320 };
   let isCollapsed = false;
+  let activeTab = 'tools';
+
+  function getHeight() {
+    return isCollapsed ? COLLAPSED_HEIGHT : (TAB_HEIGHTS[activeTab] || 470);
+  }
 
   function toggleCollapse() {
     isCollapsed = !isCollapsed;
     document.body.classList.toggle('collapsed', isCollapsed);
-    parent.postMessage({ pluginMessage: { type: 'resize', height: isCollapsed ? COLLAPSED_HEIGHT : EXPANDED_HEIGHT } }, '*');
+    parent.postMessage({ pluginMessage: { type: 'resize', height: getHeight() } }, '*');
   }
 
   // Tab switching
@@ -467,7 +474,9 @@
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
       tab.classList.add('active');
-      document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+      activeTab = tab.dataset.tab;
+      document.getElementById('tab-' + activeTab).classList.add('active');
+      parent.postMessage({ pluginMessage: { type: 'resize', height: getHeight() } }, '*');
     });
   });
 

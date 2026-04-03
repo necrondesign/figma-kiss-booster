@@ -848,7 +848,7 @@ async function frameWithBorder() {
     sendStatus(`${wrappers.length} framed`, "success");
 }
 // ─── UI Setup ────────────────────────────────────────────────────
-figma.showUI(__html__, { width: 320, height: 470, themeColors: true });
+figma.showUI(__html__, { width: 320, height: 420, themeColors: true });
 // ─── Translator helpers ──────────────────────────────────────────
 function findAllTextNodes(nodes) {
     let result = [];
