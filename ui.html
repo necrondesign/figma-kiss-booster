@@ -477,6 +477,7 @@
       activeTab = tab.dataset.tab;
       document.getElementById('tab-' + activeTab).classList.add('active');
       parent.postMessage({ pluginMessage: { type: 'resize', height: getHeight() } }, '*');
+      parent.postMessage({ pluginMessage: { type: 'tab-change', tab: activeTab } }, '*');
     });
   });
 
@@ -574,6 +575,10 @@
       // Align
       setBtn('btn-align', true);
       setBtn('c-btn-align', true);
+
+      // Smart copy: needs any selection
+      setBtn('btn-copy', hasAny);
+      setBtn('c-btn-copy', hasAny);
 
       // Frame border
       setBtn('btn-frame', hasAny);

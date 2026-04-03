@@ -566,17 +566,27 @@ async function smartCopy(): Promise<void> {
   }
 
   const clone = (node as FrameNode).clone();
-  clone.x = node.x + node.width + H_GAP;
+  const shiftAmount = node.width + H_GAP;
+  clone.x = node.x + shiftAmount;
   clone.y = node.y;
 
-  // If inside a section, expand section and cascade-shift neighbors
+  // If inside a section, shift siblings to the right and expand
   const parentSection = node.parent;
   if (parentSection && parentSection.type === "SECTION") {
+    // Shift all siblings to the right of the insert point
+    const insertRight = node.x + node.width;
+    for (const child of parentSection.children) {
+      if (child === node) continue;
+      if (child.x >= insertRight) {
+        child.x += shiftAmount;
+      }
+    }
+
     parentSection.appendChild(clone);
     clone.x = node.x + node.width + H_GAP;
     clone.y = node.y;
 
-    // Expand section to fit the new clone
+    // Expand section to fit
     let maxX = 0;
     for (const child of parentSection.children) {
       const right = child.x + child.width;
@@ -1006,6 +1016,8 @@ function findAllTextNodes(nodes: ReadonlyArray<SceneNode>): TextNode[] {
   return result;
 }
 
+let currentTab = "tools";
+
 function sendSelectionInfo() {
   const sel = figma.currentPage.selection;
   const count = sel.length;
@@ -1013,7 +1025,7 @@ function sendSelectionInfo() {
   const hasFrames = sel.some((n) => n.type === "FRAME" || n.type === "COMPONENT" || n.type === "INSTANCE");
   const allDark = count > 0 && sel.every((n) => n.name.endsWith(" — Dark"));
   const hasAny = count > 0;
-  const textCount = findAllTextNodes(sel).length;
+  const textCount = currentTab === "translator" ? findAllTextNodes(sel).length : 0;
 
   figma.ui.postMessage({
     type: "selection-info",
@@ -1062,6 +1074,10 @@ figma.ui.onmessage = async (msg: { type: string }) => {
       await frameWithBorder();
       break;
     case "request-selection":
+      sendSelectionInfo();
+      break;
+    case "tab-change":
+      currentTab = (msg as any).tab;
       sendSelectionInfo();
       break;
     case "resize":
