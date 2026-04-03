@@ -1,59 +1,126 @@
-# Kiss booster
+# Kiss Booster
 
-Figma plugin with a set of tools for speeding up design workflows — dark theme generation, section management, art task calculations, design stickers and built-in translator.
+Figma-плагин с набором инструментов для ускорения работы дизайнера. Работа с секциями, тёмная тема, арт-задачи, перевод текстов и управление статусами — всё в одном окне.
 
-## Features
+Интерфейс плагина сворачивается в компактный режим, чтобы не занимать место на экране.
 
-### Tools tab
+## Вкладка Tools
 
-**Wrap to new selection**
-Select frames on the canvas → plugin aligns them horizontally (80px gap), creates dark theme copies below each frame (160px gap) using Figma variable modes, and wraps everything into a Section with a fill token applied. If no dark mode exists in the file, frames are wrapped without dark copies.
+### Wrap to new selection
 
-**Fix selection**
-Select a Section → plugin re-aligns light frames inside, removes old dark copies, creates fresh ones, and resizes the Section to fit.
+Выбираете фреймы на канвасе и нажимаете кнопку. Плагин:
 
-**Expand selection**
-Select a Section → plugin calculates the gap and width of existing frames inside and expands the Section to the right by one gap + one frame width.
+1. Выравнивает фреймы горизонтально с отступом 80px
+2. Если в файле есть переменные с режимом "Dark" — создаёт тёмные копии каждого фрейма ниже (отступ 160px) и применяет dark mode через variable modes
+3. Оборачивает всё в Section и применяет к ней переменную `default_system_frame` как заливку
 
-**Align all sections**
-Aligns all Sections on the current page (or selected ones) horizontally with 400px gap between them.
+Работает и с локальными переменными, и с переменными из подключённой библиотеки дизайн-системы. Если тёмного режима нет — просто оборачивает без копий.
 
-**Make 1px gap**
-Wraps each selected object into a frame with 1px padding on all sides. Handles rotated objects correctly using absolute bounding box. The wrapper frame has no fill or stroke — just structure.
+### Fix selection
 
-### Task & status tab
+Выбираете Section и нажимаете кнопку. Плагин:
 
-**Create art task**
-Select objects → plugin creates an instance of the ArtTask component from the linked design system next to each object (240px to the right). Automatically fills two fields:
-- Object dimensions (e.g. `80x80px`)
-- Art production size — scales to the nearest art group (160×160, 320×320, 540×800), rounds up to even, multiplies by 3 for retina (e.g. `480x480px`)
+1. Удаляет все старые тёмные копии (фреймы с суффиксом " — Dark")
+2. Выравнивает светлые фреймы горизонтально внутри секции
+3. Создаёт свежие тёмные копии с правильным dark mode
+4. Ресайзит секцию под контент
 
-**Create status**
-Enter custom text or leave empty for a random name (Какашечка, Шляпа, Пук-Пук, Техдолг, Кусь). Plugin creates a Design Sticker instance with a random emotion (Emotion1–Emotion60) positioned above the selected object.
+Если в файле нет dark mode — просто выравнивает фреймы и ресайзит секцию без создания тёмных копий.
 
-### Translator tab
+### Expand selection
 
-**Translate selection**
-Select layers containing text → choose target language from the dropdown → plugin translates all text layers using Google Translate API and applies the results back to the text nodes. Supports mixed font styles.
+Выбираете Section и нажимаете кнопку. Плагин расширяет секцию вправо на ширину одного фрейма + отступ между фреймами. Это удобно для добавления новых экранов в существующую секцию.
 
-Available languages: Russian, English, German, Polish, Arabic, Chinese, Spanish, French, Portuguese, Japanese, Korean.
+Если секции правее наезжают друг на друга после расширения — они каскадно сдвигаются вправо с сохранением минимального зазора 400px.
 
-## Installation
+Работает мгновенно, без задержки.
 
-1. Clone or download this repository
-2. Run `npm install` and `npm run build`
-3. In Figma: Plugins → Development → Import plugin from manifest → select `manifest.json`
+### Align
 
-## Development
+Выравнивает все секции на странице (или выбранные) в строки:
+
+- 6 секций в строке, потом перенос на новую строку
+- Горизонтальный отступ между секциями — 400px
+- Вертикальный отступ между строками — высота самой высокой секции + 400px
+- Если выбраны конкретные секции — выравнивание идёт от последней выбранной (её X и Y становятся точкой отсчёта)
+
+### Copy (Smart copy)
+
+Выбираете фрейм и нажимаете кнопку. Плагин:
+
+1. Клонирует фрейм и ставит копию правее с отступом 80px
+2. Если фрейм внутри секции — секция автоматически расширяется
+3. Секции правее каскадно сдвигаются если зазор становится меньше 400px
+
+Работает мгновенно, без задержки.
+
+### 1px (Make 1px gap)
+
+Оборачивает каждый выбранный объект во фрейм с отступом 1px со всех сторон. Фрейм-обёртка без заливки и обводки — только структура. Корректно работает с повёрнутыми объектами.
+
+### Dev (Ready for dev)
+
+Переключает статус "Ready for development" на выбранных элементах:
+
+- **Есть выделение** — если все элементы уже помечены Ready for Dev, снимает статус. Иначе — ставит всем
+- **Нет выделения** — ставит/снимает Ready for Dev на всех top-level фреймах и секциях текущей страницы
+
+Работает мгновенно, без задержки.
+
+## Вкладка Art task
+
+### Create art task
+
+Выбираете один объект и один существующий блок ArtTask, нажимаете кнопку. Плагин:
+
+1. Считывает размеры объекта
+2. Определяет группу размеров (160x160, 320x320 или 540x800)
+3. Масштабирует пропорционально до ближайшей группы, округляет до чётного
+4. Умножает на 3 для ретины
+5. Заполняет ArtTask блок двумя размерами: оригинальный (например `80x80px`) и для продакшена (например `480x480px`)
+6. Рисует зелёную стрелку (#30CB44, 4px) от ArtTask к объекту — стрелка идёт горизонтально-вертикально с скруглением 16px на углах, не пересекает ни ArtTask, ни объект
+
+Компонент ArtTask ищется на текущей странице. После первого нахождения ключ кешируется — повторные вызовы мгновенные.
+
+## Вкладка Translator
+
+### Translate selection
+
+Выбираете слои с текстом, выбираете язык в дропдауне и нажимаете кнопку. Плагин:
+
+1. Собирает все текстовые ноды из выделения (включая вложенные)
+2. Переводит каждый текст через Google Translate API
+3. Применяет переведённый текст обратно, сохраняя шрифты
+
+Поддерживаемые языки: русский, английский, немецкий, польский, арабский, китайский, испанский, французский, португальский, японский, корейский.
+
+## Сворачиваемый интерфейс
+
+Кнопка-шеврон в правом углу табов сворачивает плагин в компактный режим:
+
+- **Tools** — сетка кнопок: Wrap, Fix, Expand / Align, Copy, 1px, Dev
+- **Art task** — статус + кнопка
+- **Translator** — выбор языка + кнопка
+
+Окно плагина автоматически подстраивает высоту под активную вкладку.
+
+## Установка
+
+1. Скачайте или клонируйте репозиторий
+2. В Figma: Plugins → Development → Import plugin from manifest → выберите `manifest.json`
+
+Плагин готов к работе сразу — сборка уже включена в репозиторий.
+
+## Разработка
 
 ```
 npm install
-npm run build    # compile once
-npm run watch    # compile on changes
+npm run build    # собрать один раз
+npm run watch    # пересобирать при изменениях
 ```
 
-## Requirements
+## Требования
 
-- Figma desktop app
-- For dark theme features: variable collection with a "Dark" mode
-- For art task / sticker features: linked design system with ArtTask and Design Sticker components (at least one instance placed in the file)
+- Figma desktop
+- Для тёмной темы: коллекция переменных с режимом "Dark" (локальная или из подключённой библиотеки)
+- Для арт-задач: компонент ArtTask в файле (хотя бы один инстанс на текущей странице)
