@@ -480,17 +480,37 @@ async function alignSections(): Promise<void> {
     return;
   }
 
+  const COLS = 6;
+
+  // Use last selected section as anchor
+  const lastSelected = selection.length > 0
+    ? selection[selection.length - 1] as SectionNode
+    : null;
+  const baseX = lastSelected ? lastSelected.x : sections[0].x;
+  const baseY = lastSelected ? lastSelected.y : sections[0].y;
+
   // Sort by current x position to preserve order
   sections.sort((a, b) => a.x - b.x);
 
-  // Align: same Y, horizontal with gap
-  const baseY = sections[0].y;
-  let nextX = sections[0].x;
+  // Find tallest section for vertical gap
+  let maxHeight = 0;
+  for (const s of sections) {
+    if (s.height > maxHeight) maxHeight = s.height;
+  }
+  const vGap = maxHeight + SECTION_GAP;
 
-  for (const section of sections) {
-    section.x = nextX;
-    section.y = baseY;
-    nextX = nextX + section.width + SECTION_GAP;
+  let nextX = baseX;
+  let rowY = baseY;
+
+  for (let i = 0; i < sections.length; i++) {
+    if (i > 0 && i % COLS === 0) {
+      // New row
+      nextX = baseX;
+      rowY += vGap;
+    }
+    sections[i].x = nextX;
+    sections[i].y = rowY;
+    nextX += sections[i].width + SECTION_GAP;
   }
 
   figma.currentPage.selection = sections;
@@ -672,10 +692,6 @@ async function fixSelection(): Promise<void> {
   }
 
   const dark = await findDarkMode();
-  if (!dark) {
-    sendStatus("Dark mode not found", "error");
-    return;
-  }
 
   // Collect light frames (skip sections and dark copies)
   const lightFrames: SceneNode[] = [];
@@ -706,17 +722,19 @@ async function fixSelection(): Promise<void> {
     nextX = nextX + frame.width + H_GAP;
   }
 
-  // Create dark copies below each light frame
+  // Create dark copies if dark mode is available
   const clones: SceneNode[] = [];
-  for (const frame of lightFrames) {
-    if (!("clone" in frame)) continue;
-    const clone = (frame as FrameNode).clone();
-    section.appendChild(clone);
-    clone.x = frame.x;
-    clone.y = frame.y + frame.height + V_GAP;
-    clone.setExplicitVariableModeForCollection(dark.collection, dark.modeId);
-    clone.name = frame.name + " — Dark";
-    clones.push(clone);
+  if (dark) {
+    for (const frame of lightFrames) {
+      if (!("clone" in frame)) continue;
+      const clone = (frame as FrameNode).clone();
+      section.appendChild(clone);
+      clone.x = frame.x;
+      clone.y = frame.y + frame.height + V_GAP;
+      clone.setExplicitVariableModeForCollection(dark.collection, dark.modeId);
+      clone.name = frame.name + " — Dark";
+      clones.push(clone);
+    }
   }
 
   // Resize section to fit content
@@ -735,62 +753,102 @@ async function fixSelection(): Promise<void> {
 
   figma.currentPage.selection = [section];
   figma.viewport.scrollAndZoomIntoView([section]);
-  sendStatus(`Fixed ${lightFrames.length} + ${clones.length} dark`, "success");
+  const darkMsg = clones.length > 0 ? ` + ${clones.length} dark` : "";
+  sendStatus(`Fixed ${lightFrames.length}${darkMsg}`, "success");
 }
 
 // ─── Feature 7: Create Art Block ─────────────────────────────────
 
 const ART_BLOCK_GAP = 240;
 
-async function findArtTaskComponent(): Promise<ComponentNode | null> {
-  // Search all pages for any instance or component named "ArtTask" or containing "Art Task"
-  const pages = figma.root.children;
-  for (const page of pages) {
-    const search = page.findOne((n) => {
-      const name = n.name.toLowerCase().replace(/\s+/g, "");
-      if (n.type === "INSTANCE" && name.includes("arttask")) return true;
-      if (n.type === "COMPONENT" && name.includes("arttask")) return true;
-      return false;
-    });
+let cachedArtTask: ComponentNode | null = null;
 
-    if (search) {
-      if (search.type === "COMPONENT") return search;
-      if (search.type === "INSTANCE") {
-        const main = (search as InstanceNode).mainComponent;
-        if (main) return main;
+async function findArtTaskComponent(): Promise<ComponentNode | null> {
+  if (cachedArtTask && !cachedArtTask.removed) return cachedArtTask;
+
+  // Try saved key first — instant import
+  const savedKey = await figma.clientStorage.getAsync("artTaskKey");
+  if (savedKey) {
+    try {
+      cachedArtTask = await figma.importComponentByKeyAsync(savedKey);
+      return cachedArtTask;
+    } catch (_e) {
+      await figma.clientStorage.deleteAsync("artTaskKey");
+    }
+  }
+
+  // Fallback: search current page
+  const candidates = figma.currentPage.findAllWithCriteria({ types: ["COMPONENT", "INSTANCE"] });
+  for (const node of candidates) {
+    const name = node.name.toLowerCase().replace(/\s+/g, "");
+    if (!name.includes("arttask")) continue;
+    if (node.type === "COMPONENT") {
+      cachedArtTask = node;
+      await figma.clientStorage.setAsync("artTaskKey", node.key);
+      return node;
+    }
+    if (node.type === "INSTANCE") {
+      const main = (node as InstanceNode).mainComponent;
+      if (main) {
+        cachedArtTask = main;
+        await figma.clientStorage.setAsync("artTaskKey", main.key);
+        return main;
       }
     }
   }
   return null;
 }
 
-async function createArtBlock(): Promise<void> {
-  const selection = [...figma.currentPage.selection];
+async function fillArtTask(node: SceneNode, sizeText: string, size3xText: string): Promise<void> {
+  const iconTags = findIconTags(node);
+  if (iconTags.length < 3) return;
 
-  if (selection.length === 0) {
-    sendStatus("Select objects", "error");
-    return;
-  }
+  const tag1Texts = findTextNodes(iconTags[1]);
+  const tag2Texts = findTextNodes(iconTags[2]);
+  const allTexts = [...tag1Texts, ...tag2Texts];
 
-  // Find the ArtTask component (local or from library)
-  let component = await findArtTaskComponent();
-
-  if (!component) {
-    sendStatus("ArtTask not found in file", "error");
-    return;
-  }
-
-  // If component is from a library, import it
-  if (component.remote) {
-    try {
-      component = await figma.importComponentByKeyAsync(component.key);
-    } catch (_e) {
-      sendStatus("Can't import ArtTask", "error");
-      return;
+  for (const textNode of allTexts) {
+    const fontName = textNode.fontName;
+    if (fontName !== figma.mixed) {
+      await figma.loadFontAsync(fontName);
     }
   }
 
-  // Art size groups
+  if (tag1Texts.length > 0) tag1Texts[0].characters = sizeText;
+  if (tag2Texts.length > 0) tag2Texts[tag2Texts.length - 1].characters = size3xText;
+}
+
+async function createArtBlock(): Promise<void> {
+  const selection = [...figma.currentPage.selection];
+
+  if (selection.length !== 2) {
+    sendStatus("Select 1 object + 1 ArtTask", "error");
+    return;
+  }
+
+  // Separate ArtTask from target
+  let artTask: SceneNode | null = null;
+  let target: SceneNode | null = null;
+
+  for (const node of selection) {
+    const iconTags = findIconTags(node);
+    if (iconTags.length >= 2) {
+      artTask = node;
+    } else {
+      target = node;
+    }
+  }
+
+  if (!artTask || !target) {
+    sendStatus("Select 1 object + 1 ArtTask", "error");
+    return;
+  }
+
+  // Calculate sizes
+  const w = Math.round(target.width);
+  const h = Math.round(target.height);
+  const sizeText = `${w}x${h}px`;
+
   const ART_GROUPS: [number, number][] = [
     [160, 160],
     [320, 320],
@@ -798,60 +856,83 @@ async function createArtBlock(): Promise<void> {
   ];
   const ceilEven = (n: number) => Math.ceil(n / 2) * 2;
 
-  const instances: SceneNode[] = [];
+  let group = ART_GROUPS[ART_GROUPS.length - 1];
+  for (const g of ART_GROUPS) {
+    if (w <= g[0] && h <= g[1]) { group = g; break; }
+  }
+  const scale = Math.min(group[0] / w, group[1] / h);
+  const artW = ceilEven(w * scale);
+  const artH = ceilEven(h * scale);
+  const size3xText = `${artW * 3}x${artH * 3}px`;
 
-  for (const node of selection) {
-    const w = Math.round(node.width);
-    const h = Math.round(node.height);
-    const sizeText = `${w}x${h}px`;
+  // Fill ArtTask with size data
+  await fillArtTask(artTask, sizeText, size3xText);
 
-    // Find group
-    let group = ART_GROUPS[ART_GROUPS.length - 1];
-    for (const g of ART_GROUPS) {
-      if (w <= g[0] && h <= g[1]) {
-        group = g;
-        break;
-      }
-    }
+  // Create green elbow arrow from ArtTask to target
+  const artBB = artTask.absoluteBoundingBox;
+  const targetBB = target.absoluteBoundingBox;
+  if (artBB && targetBB) {
+    const arrow = figma.createVector();
+    arrow.name = "ArtTask Arrow";
 
-    const scale = Math.min(group[0] / w, group[1] / h);
-    const artW = ceilEven(w * scale);
-    const artH = ceilEven(h * scale);
-    const retW = artW * 3;
-    const retH = artH * 3;
-    const size3xText = `${retW}x${retH}px`;
+    const targetCenterY = targetBB.y + targetBB.height / 2;
+    const gap = 20;
+    const goingDown = targetCenterY > artBB.y + artBB.height / 2;
 
-    // Create instance using absolute position
-    const bb = node.absoluteBoundingBox;
-    if (!bb) continue;
-    const instance = component.createInstance();
-    instance.x = bb.x + bb.width + ART_BLOCK_GAP;
-    instance.y = bb.y;
+    // Start from bottom or top edge of ArtTask (center X), outside the block
+    const startX = artBB.x + artBB.width / 2;
+    const startY = goingDown
+      ? artBB.y + artBB.height + gap
+      : artBB.y - gap;
 
-    // Find IconTags and fill text
-    const iconTags = findIconTags(instance);
-    if (iconTags.length >= 3) {
-      const tag1Texts = findTextNodes(iconTags[1]);
-      const tag2Texts = findTextNodes(iconTags[2]);
+    // End at target edge closest to ArtTask, with gap
+    const artCenterX = artBB.x + artBB.width / 2;
+    const targetCenterX = targetBB.x + targetBB.width / 2;
+    const endX = artCenterX < targetCenterX
+      ? targetBB.x - gap
+      : targetBB.x + targetBB.width + gap;
+    const endY = targetCenterY;
 
-      const allTexts = [...tag1Texts, ...tag2Texts];
-      for (const textNode of allTexts) {
-        const fontName = textNode.fontName;
-        if (fontName !== figma.mixed) {
-          await figma.loadFontAsync(fontName);
-        }
-      }
+    // All points for bounding box
+    const allX = [startX, endX];
+    const allY = [startY, endY];
+    const minX = Math.min(...allX);
+    const minY = Math.min(...allY);
+    const maxX = Math.max(...allX);
+    const maxY = Math.max(...allY);
 
-      if (tag1Texts.length > 0) tag1Texts[0].characters = sizeText;
-      if (tag2Texts.length > 0) tag2Texts[tag2Texts.length - 1].characters = size3xText;
-    }
+    arrow.x = minX;
+    arrow.y = minY;
+    arrow.resize(Math.max(maxX - minX, 1), Math.max(maxY - minY, 1));
 
-    instances.push(instance);
+    // Local coordinates
+    const lsx = startX - minX, lsy = startY - minY;
+    const lex = endX - minX, ley = endY - minY;
+
+    // #30CB44
+    const green = { r: 48 / 255, g: 203 / 255, b: 68 / 255 };
+
+    // Elbow: vertical from ArtTask edge → horizontal to target (1 corner)
+    arrow.vectorNetwork = {
+      vertices: [
+        { x: lsx, y: lsy, strokeCap: "NONE", cornerRadius: 0 },
+        { x: lsx, y: ley, strokeCap: "NONE", cornerRadius: 16 },
+        { x: lex, y: ley, strokeCap: "ARROW_EQUILATERAL", cornerRadius: 0 },
+      ],
+      segments: [
+        { start: 0, end: 1 },
+        { start: 1, end: 2 },
+      ],
+      regions: [],
+    };
+
+    arrow.strokes = [{ type: "SOLID", color: green }];
+    arrow.strokeWeight = 4;
+    arrow.fills = [];
   }
 
-  figma.currentPage.selection = instances;
-  figma.viewport.scrollAndZoomIntoView([...selection, ...instances]);
-  sendStatus(`${instances.length} art blocks created`, "success");
+  figma.currentPage.selection = [artTask];
+  sendStatus(`${sizeText} → x3 → ${size3xText}`, "success");
 }
 
 // ─── Feature 8: Frame with Border ────────────────────────────────
@@ -905,121 +986,6 @@ async function frameWithBorder(): Promise<void> {
 
   figma.currentPage.selection = wrappers;
   sendStatus(`${wrappers.length} framed`, "success");
-}
-
-// ─── Feature 9: Design Sticker ───────────────────────────────────
-
-const RANDOM_TEXTS = ["Какашечка", "Шляпа", "Пук-Пук", "Техдолг", "Кусь"];
-
-async function findDesignStickerComponent(): Promise<ComponentNode | ComponentSetNode | null> {
-  const pages = figma.root.children;
-  for (const page of pages) {
-    const search = page.findOne((n) => {
-      const name = n.name.toLowerCase().replace(/\s+/g, "");
-      if (n.type === "INSTANCE" && name.includes("designsticker")) return true;
-      if (n.type === "COMPONENT" && name.includes("designsticker")) return true;
-      return false;
-    });
-    if (search) {
-      if (search.type === "COMPONENT") {
-        // Check if part of a component set
-        if (search.parent && search.parent.type === "COMPONENT_SET") {
-          return search.parent;
-        }
-        return search;
-      }
-      if (search.type === "INSTANCE") {
-        const main = (search as InstanceNode).mainComponent;
-        if (main) {
-          if (main.parent && main.parent.type === "COMPONENT_SET") {
-            return main.parent;
-          }
-          return main;
-        }
-      }
-    }
-  }
-  return null;
-}
-
-async function createDesignSticker(customName: string): Promise<void> {
-  const selection = [...figma.currentPage.selection];
-
-  if (selection.length === 0) {
-    sendStatus("Select an object", "error");
-    return;
-  }
-
-  // Find Design Sticker component
-  const found = await findDesignStickerComponent();
-  if (!found) {
-    sendStatus("Design Sticker not found", "error");
-    return;
-  }
-
-  let stickerComponent: ComponentNode = found.type === "COMPONENT_SET"
-    ? (found.children[0] as ComponentNode)
-    : found;
-
-  if (stickerComponent.remote) {
-    try {
-      stickerComponent = await figma.importComponentByKeyAsync(stickerComponent.key);
-    } catch (_e) {
-      sendStatus("Can't import sticker", "error");
-      return;
-    }
-  }
-
-  const text = customName.trim() || RANDOM_TEXTS[Math.floor(Math.random() * RANDOM_TEXTS.length)];
-
-  const instance = stickerComponent.createInstance();
-
-  // Swap the "Instance" property to a random Emotion using preferredValues
-  try {
-    const defs = stickerComponent.componentPropertyDefinitions;
-    for (const [key, def] of Object.entries(defs)) {
-      if (def.type === "INSTANCE_SWAP" && def.preferredValues && def.preferredValues.length > 0) {
-        const randomPref = def.preferredValues[Math.floor(Math.random() * def.preferredValues.length)];
-        const imported = await figma.importComponentByKeyAsync(randomPref.key);
-        instance.setProperties({ [key]: imported.id });
-        break;
-      }
-    }
-  } catch (_e) {
-    // Swap failed silently, keep default emotion
-  }
-
-  // Position above the selected element, -40px up
-  const target = selection[0];
-  const bb = target.absoluteBoundingBox;
-  if (bb) {
-    instance.x = bb.x;
-    instance.y = bb.y - instance.height + 40;
-  }
-
-  // Move sticker above the target in layer order
-  const targetParent = target.parent;
-  if (targetParent && "children" in targetParent) {
-    const idx = (targetParent as ChildrenMixin).children.indexOf(target as SceneNode);
-    (targetParent as ChildrenMixin).insertChild(idx + 1, instance);
-    instance.x = bb ? bb.x - (targetParent as SceneNode).absoluteTransform[0][2] : instance.x;
-    instance.y = bb ? bb.y - instance.height + 40 - (targetParent as SceneNode).absoluteTransform[1][2] : instance.y;
-  }
-
-  // Find text node inside and set text
-  const texts = findTextNodes(instance);
-  if (texts.length > 0) {
-    const textNode = texts[0];
-    const fontName = textNode.fontName;
-    if (fontName !== figma.mixed) {
-      await figma.loadFontAsync(fontName);
-    }
-    textNode.characters = text;
-  }
-
-  figma.currentPage.selection = [instance];
-  figma.viewport.scrollAndZoomIntoView([instance]);
-  sendStatus(`Sticker: ${text}`, "success");
 }
 
 // ─── UI Setup ────────────────────────────────────────────────────
@@ -1095,11 +1061,11 @@ figma.ui.onmessage = async (msg: { type: string }) => {
     case "frame-border":
       await frameWithBorder();
       break;
-    case "create-sticker":
-      await createDesignSticker((msg as any).name || "");
-      break;
     case "request-selection":
       sendSelectionInfo();
+      break;
+    case "resize":
+      figma.ui.resize(320, (msg as any).height);
       break;
     case "run-translation": {
       const textNodes = findAllTextNodes(figma.currentPage.selection);

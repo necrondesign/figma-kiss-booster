@@ -16,9 +16,13 @@
   .tabs {
     display: flex;
     align-items: center;
-    gap: 8px;
     padding: 16px;
     border-bottom: 1px solid #444;
+  }
+  .tabs-left {
+    display: flex;
+    gap: 8px;
+    flex: 1;
   }
   .tab {
     height: 24px;
@@ -43,6 +47,32 @@
   }
   .tab.active:hover {
     color: #fff;
+  }
+
+  /* Collapse toggle */
+  .collapse-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 5px;
+    background: #383838;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .collapse-btn:hover { opacity: 0.85; }
+  .collapse-btn svg {
+    width: 16px;
+    height: 16px;
+    transition: transform 0.2s;
+  }
+  body.collapsed .collapse-btn svg {
+    transform: rotate(0deg);
+  }
+  body:not(.collapsed) .collapse-btn svg {
+    transform: rotate(180deg);
   }
 
   /* Sections */
@@ -270,110 +300,167 @@
   /* Tab content */
   .tab-content { display: none; }
   .tab-content.active { display: block; }
+
+  /* Collapsed mode */
+  .expanded-view { display: block; }
+  .collapsed-view { display: none; }
+  body.collapsed { overflow: hidden; }
+  body.collapsed .expanded-view { display: none; }
+  body.collapsed .collapsed-view { display: block; }
+  body.collapsed .tab-content.active { display: block; }
+
+  .compact-grid {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .compact-row {
+    display: flex;
+    gap: 8px;
+  }
+  .compact-row .btn {
+    flex: 1;
+  }
 </style>
 </head>
 <body>
 
   <div class="tabs">
-    <button class="tab active" data-tab="tools">Tools</button>
-    <button class="tab" data-tab="art">Task & status</button>
-    <button class="tab" data-tab="translator">Translator</button>
+    <div class="tabs-left">
+      <button class="tab active" data-tab="tools">Tools</button>
+      <button class="tab" data-tab="art">Art task</button>
+      <button class="tab" data-tab="translator">Translator</button>
+    </div>
+    <button class="collapse-btn" id="collapse-toggle" onclick="toggleCollapse()">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.647 7.147a.5.5 0 01.706 0L8 8.794l1.647-1.647a.5.5 0 01.706.706l-2 2a.5.5 0 01-.706 0l-2-2a.5.5 0 010-.706z" fill="white"/></svg>
+    </button>
   </div>
 
   <!-- Tools Tab -->
   <div class="tab-content active" id="tab-tools">
-    <div class="section">
-      <div class="section-label">Create new selection and make dark theme</div>
-      <div class="section-content">
-        <div class="status empty" id="status-wrap">Select elements</div>
-        <button class="btn btn-secondary" id="btn-wrap" onclick="send('wrap-selection')">Wrap to new selection</button>
+    <!-- Expanded -->
+    <div class="expanded-view">
+      <div class="section">
+        <div class="section-label">Create new selection and make dark theme</div>
+        <div class="section-content">
+          <div class="status empty" id="status-wrap">Select elements</div>
+          <button class="btn btn-secondary" id="btn-wrap" onclick="send('wrap-selection')">Wrap to new selection</button>
+        </div>
       </div>
-    </div>
 
-    <div class="section">
-      <div class="section-label">Fix & expand selection</div>
-      <div class="section-content">
-        <div class="status empty" id="status-fix">Select elements</div>
-        <div class="btn-row">
-          <button class="btn btn-secondary" id="btn-fix" onclick="send('fix-selection')">Fix selection</button>
-          <button class="btn btn-secondary" id="btn-expand" onclick="sendInstant('expand-section')">Expand selection</button>
+      <div class="section">
+        <div class="section-label">Fix & expand selection</div>
+        <div class="section-content">
+          <div class="status empty" id="status-fix">Select elements</div>
+          <div class="btn-row">
+            <button class="btn btn-secondary" id="btn-fix" onclick="send('fix-selection')">Fix selection</button>
+            <button class="btn btn-secondary" id="btn-expand" onclick="sendInstant('expand-section')">Expand selection</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">Other</div>
+        <div class="other-buttons">
+          <div class="btn-row">
+            <button class="btn btn-primary" id="btn-align" onclick="send('align-sections')">Align sections</button>
+            <button class="btn btn-primary" id="btn-copy" onclick="sendInstant('smart-copy')">Smart copy</button>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="btn-frame" onclick="send('frame-border')">Make 1px gap</button>
+            <button class="btn btn-primary" id="btn-dev" onclick="sendInstant('toggle-dev-status')">Ready for dev</button>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-label">Other</div>
-      <div class="other-buttons">
-        <div class="btn-row">
-          <button class="btn btn-primary" id="btn-align" onclick="send('align-sections')">Align sections</button>
-          <button class="btn btn-primary" id="btn-copy" onclick="sendInstant('smart-copy')">Smart copy</button>
+    <!-- Collapsed -->
+    <div class="collapsed-view">
+      <div class="compact-grid">
+        <div class="compact-row">
+          <button class="btn btn-primary" id="c-btn-wrap" onclick="send('wrap-selection')">Wrap</button>
+          <button class="btn btn-secondary" id="c-btn-fix" onclick="send('fix-selection')">Fix</button>
+          <button class="btn btn-secondary" id="c-btn-expand" onclick="sendInstant('expand-section')">Expand</button>
         </div>
-        <div class="btn-row">
-          <button class="btn btn-primary" id="btn-frame" onclick="send('frame-border')">Make 1px gap</button>
-          <button class="btn btn-primary" id="btn-dev" onclick="sendInstant('toggle-dev-status')">Ready for dev</button>
+        <div class="compact-row">
+          <button class="btn btn-secondary" id="c-btn-align" onclick="send('align-sections')">Align</button>
+          <button class="btn btn-secondary" id="c-btn-copy" onclick="sendInstant('smart-copy')">Copy</button>
+          <button class="btn btn-secondary" id="c-btn-frame" onclick="send('frame-border')">1px</button>
+          <button class="btn btn-secondary" id="c-btn-dev" onclick="sendInstant('toggle-dev-status')">Dev</button>
         </div>
       </div>
     </div>
-
   </div>
 
-  <!-- Task & Status Tab -->
+  <!-- Art Task Tab -->
   <div class="tab-content" id="tab-art">
-    <div class="section">
-      <div class="section-label">Art task</div>
-      <div class="section-content">
-        <div class="status empty" id="status-art">Select elements</div>
-        <button class="btn btn-secondary" id="btn-art" onclick="send('create-art-block')">Create art task</button>
+    <div class="expanded-view">
+      <div class="section">
+        <div class="section-label">Art task</div>
+        <div class="section-content">
+          <div class="status empty" id="status-art">Select elements</div>
+          <button class="btn btn-secondary" id="btn-art" onclick="send('create-art-block')">Create art task</button>
+        </div>
       </div>
     </div>
-
-    <div class="section" style="border-bottom:none;">
-      <div class="section-label">Status</div>
-      <div class="section-content">
-        <input type="text" id="sticker-name" placeholder="Status text" style="
-          background: transparent;
-          border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 5px;
-          height: 24px;
-          padding: 0 8px;
-          font-family: inherit;
-          font-size: 11px;
-          font-weight: 500;
-          letter-spacing: 0.055px;
-          color: #fff;
-          width: 100%;
-          outline: none;
-        " onfocus="this.style.borderColor='#0c8ce9'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'" />
-        <button class="btn btn-secondary" id="btn-sticker" onclick="sendSticker()">Create status</button>
+    <div class="collapsed-view">
+      <div class="compact-grid">
+        <div class="status empty" id="c-status-art">Select elements</div>
+        <button class="btn btn-secondary" id="c-btn-art" onclick="send('create-art-block')">Create art task</button>
       </div>
     </div>
   </div>
 
   <!-- Translator Tab -->
   <div class="tab-content" id="tab-translator">
-    <div class="section">
-      <div class="section-label">Translation to</div>
-      <div style="position:relative;">
-        <div class="select-wrapper" id="lang-select" onclick="toggleLangMenu()">
-          <div class="select-left" id="lang-label">Russian</div>
-          <div class="select-right"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.647 7.147a.5.5 0 01.706 0L8 8.794l1.647-1.647a.5.5 0 01.706.706l-2 2a.5.5 0 01-.706 0l-2-2a.5.5 0 010-.706z" fill="white"/></svg></div>
+    <div class="expanded-view">
+      <div class="section">
+        <div class="section-label">Translation to</div>
+        <div style="position:relative;" class="lang-select-wrap">
+          <div class="select-wrapper" onclick="toggleLangMenu(this)">
+            <div class="select-left lang-label">Russian</div>
+            <div class="select-right"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.647 7.147a.5.5 0 01.706 0L8 8.794l1.647-1.647a.5.5 0 01.706.706l-2 2a.5.5 0 01-.706 0l-2-2a.5.5 0 010-.706z" fill="white"/></svg></div>
+          </div>
         </div>
-        <div class="dropdown-menu" id="lang-menu" style="display:none"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">Selection</div>
+        <div class="status empty" id="status-translate">Select elements</div>
+      </div>
+
+      <div class="translator-footer">
+        <button class="btn btn-secondary" id="btn-translate" onclick="runTranslate()" style="width:100%;">Translate selection</button>
+        <div class="footer-note">work on google translate engine</div>
       </div>
     </div>
-
-    <div class="section">
-      <div class="section-label">Selection</div>
-      <div class="status empty" id="status-translate">Select elements</div>
-    </div>
-
-    <div class="translator-footer">
-      <button class="btn btn-secondary" id="btn-translate" onclick="runTranslate()" style="width:100%;">Translate selection</button>
-      <div class="footer-note">work on google translate engine</div>
+    <div class="collapsed-view">
+      <div class="compact-grid">
+        <div style="position:relative;" class="lang-select-wrap">
+          <div class="select-wrapper" onclick="toggleLangMenu(this)">
+            <div class="select-left lang-label">Russian</div>
+            <div class="select-right"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.647 7.147a.5.5 0 01.706 0L8 8.794l1.647-1.647a.5.5 0 01.706.706l-2 2a.5.5 0 01-.706 0l-2-2a.5.5 0 010-.706z" fill="white"/></svg></div>
+          </div>
+        </div>
+        <button class="btn btn-secondary" id="c-btn-translate" onclick="runTranslate()">Translate selection</button>
+      </div>
     </div>
   </div>
 
+  <div class="dropdown-menu" id="lang-menu" style="display:none;position:fixed;"></div>
+
 <script>
+  const EXPANDED_HEIGHT = 470;
+  const COLLAPSED_HEIGHT = 165;
+  let isCollapsed = false;
+
+  function toggleCollapse() {
+    isCollapsed = !isCollapsed;
+    document.body.classList.toggle('collapsed', isCollapsed);
+    parent.postMessage({ pluginMessage: { type: 'resize', height: isCollapsed ? COLLAPSED_HEIGHT : EXPANDED_HEIGHT } }, '*');
+  }
+
   // Tab switching
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -410,7 +497,6 @@
   function setBtn(id, active) {
     const btn = document.getElementById(id);
     if (!btn) return;
-    // Don't override while button is in processing/done/error state
     if (lastClickedBtn === btn) return;
     btn.className = 'btn ' + (active ? 'btn-primary' : 'btn-secondary');
     btn.disabled = !active;
@@ -421,7 +507,6 @@
     if (!msg) return;
 
     if (msg.type === 'status') {
-      // Find which status field belongs to the clicked button
       if (lastClickedBtn) {
         const btnId = lastClickedBtn.id;
         const statusMap = {
@@ -431,6 +516,7 @@
           'btn-align': null,
           'btn-frame': null,
           'btn-art': 'status-art',
+          'c-btn-art': 'c-status-art',
         };
         const statusId = statusMap[btnId];
         if (statusId) {
@@ -438,7 +524,6 @@
         }
       }
 
-      // Update clicked button to done/error state
       if (lastClickedBtn) {
         const btn = lastClickedBtn;
 
@@ -451,11 +536,9 @@
         }
         btn.disabled = true;
 
-        // Reset after 2s
         setTimeout(() => {
           btn.innerHTML = btn.dataset.text;
           lastClickedBtn = null;
-          // Trigger selection update to restore correct state
           parent.postMessage({ pluginMessage: { type: 'request-selection' } }, '*');
         }, 2000);
       }
@@ -466,37 +549,41 @@
 
       const sel = count === 0 ? 'Select elements' : count + ' selected';
 
-      // Wrap: needs frames, no sections, not all dark
+      // Wrap
       const canWrap = hasFrames && !hasSection && !allDark && count > 0;
       updateStatus('status-wrap', sel, canWrap ? '' : 'empty');
       setBtn('btn-wrap', canWrap);
+      setBtn('c-btn-wrap', canWrap);
 
-      // Fix/Expand: needs a section selected
+      // Fix/Expand
       updateStatus('status-fix', sel, hasSection ? '' : 'empty');
       setBtn('btn-fix', hasSection);
       setBtn('btn-expand', hasSection);
+      setBtn('c-btn-fix', hasSection);
+      setBtn('c-btn-expand', hasSection);
 
-      // Align: always available
+      // Align
       setBtn('btn-align', true);
+      setBtn('c-btn-align', true);
 
-      // Frame border: needs any selection
+      // Frame border
       setBtn('btn-frame', hasAny);
+      setBtn('c-btn-frame', hasAny);
 
-      // Sticker: needs any selection
-      setBtn('btn-sticker', hasAny);
-
-      // Art calculator: needs any selection
+      // Art
       updateStatus('status-art', sel, hasAny ? '' : 'empty');
+      updateStatus('c-status-art', sel, hasAny ? '' : 'empty');
       setBtn('btn-art', hasAny);
+      setBtn('c-btn-art', hasAny);
 
-      // Translator: needs text nodes
+      // Translator
       const tc = msg.textCount || 0;
       const hasText = tc > 0;
       updateStatus('status-translate', hasText ? tc + ' text layers' : 'Select elements', hasText ? '' : 'empty');
       setBtn('btn-translate', hasText);
+      setBtn('c-btn-translate', hasText);
     }
 
-    // Translator: API call from plugin
     if (msg.type === 'start-api-call') {
       translateViaGoogle(msg.payload, msg.target);
     }
@@ -557,39 +644,32 @@
   }
   buildLangMenu();
 
-  function toggleLangMenu() {
+  function toggleLangMenu(trigger) {
     const menu = document.getElementById('lang-menu');
-    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    if (menu.style.display !== 'none') {
+      menu.style.display = 'none';
+      return;
+    }
+    const rect = trigger.parentElement.getBoundingClientRect();
+    menu.style.left = rect.left + 'px';
+    menu.style.top = (rect.top - 8) + 'px';
+    menu.style.display = 'block';
   }
 
   function selectLang(code) {
     targetLang = code;
-    document.getElementById('lang-label').textContent = LANGUAGES.find(l => l.code === code).name;
+    const name = LANGUAGES.find(l => l.code === code).name;
+    document.querySelectorAll('.lang-label').forEach(el => el.textContent = name);
     document.getElementById('lang-menu').style.display = 'none';
     buildLangMenu();
   }
 
-  // Close menu on click outside
   document.addEventListener('click', (e) => {
     const menu = document.getElementById('lang-menu');
-    const sel = document.getElementById('lang-select');
-    if (menu && sel && !sel.contains(e.target) && !menu.contains(e.target)) {
+    if (menu && !menu.contains(e.target) && !e.target.closest('.lang-select-wrap')) {
       menu.style.display = 'none';
     }
   });
-
-  function sendSticker() {
-    const btn = document.getElementById('btn-sticker');
-    if (!btn || btn.disabled) return;
-    if (!btn.dataset.text) btn.dataset.text = btn.textContent;
-    const nameInput = document.getElementById('sticker-name');
-    const name = nameInput ? nameInput.value : '';
-    lastClickedBtn = btn;
-    btn.className = 'btn btn-processing';
-    btn.disabled = true;
-    btn.innerHTML = '<span class="loader"></span>Processing';
-    parent.postMessage({ pluginMessage: { type: 'create-sticker', name: name } }, '*');
-  }
 
   function runTranslate() {
     const btn = document.getElementById('btn-translate');
