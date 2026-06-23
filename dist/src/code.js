@@ -89,6 +89,36 @@ async function findVariable(name) {
     }
     return null;
 }
+// Detect whether frames are laid out as a row or a column from their current positions
+function detectOrientation(frames) {
+    if (frames.length < 2)
+        return "horizontal";
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const f of frames) {
+        const cx = f.x + f.width / 2;
+        const cy = f.y + f.height / 2;
+        if (cx < minX)
+            minX = cx;
+        if (cx > maxX)
+            maxX = cx;
+        if (cy < minY)
+            minY = cy;
+        if (cy > maxY)
+            maxY = cy;
+    }
+    return (maxY - minY) > (maxX - minX) ? "vertical" : "horizontal";
+}
+// Place a dark copy next to its light frame: below if row, to the right if column
+function placeDarkCopy(dark, light, orientation) {
+    if (orientation === "horizontal") {
+        dark.x = light.x;
+        dark.y = light.y + light.height + V_GAP;
+    }
+    else {
+        dark.x = light.x + light.width + H_GAP;
+        dark.y = light.y;
+    }
+}
 // ─── Feature 1: Dark Theme Copy ──────────────────────────────────
 async function darkThemeCopy() {
     const selection = [...figma.currentPage.selection];
@@ -163,7 +193,7 @@ async function darkThemeCopy() {
     sendStatus(`${clones.length} dark copies created`, "success");
 }
 // ─── Feature 2: Wrap to New Selection ────────────────────────────
-async function wrapToNewSelection() {
+async function wrapToNewSelection(withDark = true) {
     const selection = [...figma.currentPage.selection];
     if (selection.length === 0) {
         sendStatus("Select frames", "error");
@@ -196,22 +226,35 @@ async function wrapToNewSelection() {
         sendStatus("No light frames", "error");
         return;
     }
-    // --- Step 1: Align light frames in a horizontal row ---
-    lightFrames.sort((a, b) => a.x - b.x);
-    let baseY = Infinity;
+    // --- Step 1: Align light frames, keeping their existing orientation ---
+    const orientation = detectOrientation(lightFrames);
+    let baseX = Infinity, baseY = Infinity;
     for (const f of lightFrames) {
+        if (f.x < baseX)
+            baseX = f.x;
         if (f.y < baseY)
             baseY = f.y;
     }
-    const baseX = lightFrames[0].x;
-    let nextX = baseX;
-    for (const frame of lightFrames) {
-        frame.x = nextX;
-        frame.y = baseY;
-        nextX = nextX + frame.width + H_GAP;
+    if (orientation === "horizontal") {
+        lightFrames.sort((a, b) => a.x - b.x);
+        let nextX = baseX;
+        for (const frame of lightFrames) {
+            frame.x = nextX;
+            frame.y = baseY;
+            nextX = nextX + frame.width + H_GAP;
+        }
     }
-    // --- Step 2: Try dark theme (skip if not available) ---
-    const dark = await findDarkMode();
+    else {
+        lightFrames.sort((a, b) => a.y - b.y);
+        let nextY = baseY;
+        for (const frame of lightFrames) {
+            frame.x = baseX;
+            frame.y = nextY;
+            nextY = nextY + frame.height + V_GAP;
+        }
+    }
+    // --- Step 2: Try dark theme (skip if not available or not requested) ---
+    const dark = withDark ? await findDarkMode() : null;
     let allDarkFrames = [];
     if (dark) {
         // Re-position existing dark copies
@@ -223,8 +266,7 @@ async function wrapToNewSelection() {
         for (const lightFrame of lightFrames) {
             const darkFrame = existingDarkByLightName.get(lightFrame.name);
             if (darkFrame) {
-                darkFrame.x = lightFrame.x;
-                darkFrame.y = lightFrame.y + lightFrame.height + V_GAP;
+                placeDarkCopy(darkFrame, lightFrame, orientation);
             }
         }
         // Create missing dark copies
@@ -235,8 +277,7 @@ async function wrapToNewSelection() {
             if (!("clone" in frame))
                 continue;
             const clone = frame.clone();
-            clone.x = frame.x;
-            clone.y = frame.y + frame.height + V_GAP;
+            placeDarkCopy(clone, frame, orientation);
             clone.setExplicitVariableModeForCollection(dark.collection, dark.modeId);
             clone.name = frame.name + " — Dark";
             newDarkFrames.push(clone);
@@ -407,32 +448,16 @@ async function alignSections() {
         sendStatus("No sections found", "error");
         return;
     }
-    const COLS = 6;
-    // Use last selected section as anchor
-    const lastSelected = selection.length > 0
-        ? selection[selection.length - 1]
-        : null;
-    const baseX = lastSelected ? lastSelected.x : sections[0].x;
-    const baseY = lastSelected ? lastSelected.y : sections[0].y;
     // Sort by current x position to preserve order
     sections.sort((a, b) => a.x - b.x);
-    // Find tallest section for vertical gap
-    let maxHeight = 0;
-    for (const s of sections) {
-        if (s.height > maxHeight)
-            maxHeight = s.height;
-    }
-    const vGap = maxHeight + SECTION_GAP;
+    // Always start from the leftmost section
+    const baseX = sections[0].x;
+    const baseY = sections[0].y;
+    // Lay out all sections in a single row going right, no wrapping
     let nextX = baseX;
-    let rowY = baseY;
     for (let i = 0; i < sections.length; i++) {
-        if (i > 0 && i % COLS === 0) {
-            // New row
-            nextX = baseX;
-            rowY += vGap;
-        }
         sections[i].x = nextX;
-        sections[i].y = rowY;
+        sections[i].y = baseY;
         nextX += sections[i].width + SECTION_GAP;
     }
     figma.currentPage.selection = sections;
@@ -589,14 +614,14 @@ async function expandSection() {
     // No status — expand is instant, no Done delay
 }
 // ─── Feature 6: Fix Selection ────────────────────────────────────
-async function fixSelection() {
+async function fixSelection(withDark = true) {
     const selection = [...figma.currentPage.selection];
     const section = selection.find((n) => n.type === "SECTION");
     if (!section) {
         sendStatus("Select a section", "error");
         return;
     }
-    const dark = await findDarkMode();
+    const dark = withDark ? await findDarkMode() : null;
     // Collect light frames (skip sections and dark copies)
     const lightFrames = [];
     for (const child of section.children) {
@@ -616,13 +641,25 @@ async function fixSelection() {
             child.remove();
         }
     }
-    // Align light frames horizontally inside section
-    lightFrames.sort((a, b) => a.x - b.x);
-    let nextX = SECTION_PADDING;
-    for (const frame of lightFrames) {
-        frame.x = nextX;
-        frame.y = SECTION_PADDING;
-        nextX = nextX + frame.width + H_GAP;
+    // Align light frames inside section, keeping their existing orientation
+    const orientation = detectOrientation(lightFrames);
+    if (orientation === "horizontal") {
+        lightFrames.sort((a, b) => a.x - b.x);
+        let nextX = SECTION_PADDING;
+        for (const frame of lightFrames) {
+            frame.x = nextX;
+            frame.y = SECTION_PADDING;
+            nextX = nextX + frame.width + H_GAP;
+        }
+    }
+    else {
+        lightFrames.sort((a, b) => a.y - b.y);
+        let nextY = SECTION_PADDING;
+        for (const frame of lightFrames) {
+            frame.x = SECTION_PADDING;
+            frame.y = nextY;
+            nextY = nextY + frame.height + V_GAP;
+        }
     }
     // Create dark copies if dark mode is available
     const clones = [];
@@ -632,8 +669,7 @@ async function fixSelection() {
                 continue;
             const clone = frame.clone();
             section.appendChild(clone);
-            clone.x = frame.x;
-            clone.y = frame.y + frame.height + V_GAP;
+            placeDarkCopy(clone, frame, orientation);
             clone.setExplicitVariableModeForCollection(dark.collection, dark.modeId);
             clone.name = frame.name + " — Dark";
             clones.push(clone);
@@ -857,6 +893,58 @@ async function frameWithBorder() {
     figma.currentPage.selection = wrappers;
     sendStatus(`${wrappers.length} framed`, "success");
 }
+// ─── Feature 9: Wrap in 540px Auto Layout ────────────────────────
+const FRAME_FIXED_WIDTH = 540;
+async function frame540() {
+    const selection = [...figma.currentPage.selection];
+    if (selection.length === 0) {
+        sendStatus("Select objects", "error");
+        return;
+    }
+    const wrappers = [];
+    for (const node of selection) {
+        const parent = node.parent;
+        if (!parent || !("appendChild" in parent))
+            continue;
+        const nodeX = node.x;
+        const nodeY = node.y;
+        const childH = node.height;
+        // Fixed width 540, height rounded up to the 8px grid
+        const targetH = Math.ceil(childH / 8) * 8;
+        // Auto-layout frame, centered, padding 0
+        const wrapper = figma.createFrame();
+        wrapper.name = node.name;
+        wrapper.layoutMode = "VERTICAL";
+        wrapper.paddingTop = 0;
+        wrapper.paddingBottom = 0;
+        wrapper.paddingLeft = 16;
+        wrapper.paddingRight = 16;
+        wrapper.itemSpacing = 0;
+        wrapper.primaryAxisAlignItems = "CENTER";
+        wrapper.counterAxisAlignItems = "CENTER";
+        wrapper.clipsContent = false;
+        wrapper.fills = [];
+        wrapper.strokes = [];
+        // Insert wrapper where node is, then move node inside
+        const idx = parent.children.indexOf(node);
+        parent.insertChild(idx, wrapper);
+        wrapper.appendChild(node);
+        // Stretch object to fill width (minus side padding); keep its own height
+        if ("layoutAlign" in node)
+            node.layoutAlign = "STRETCH";
+        if ("layoutGrow" in node)
+            node.layoutGrow = 0;
+        // Fixed width 540 and fixed height on the 8px grid
+        wrapper.counterAxisSizingMode = "FIXED";
+        wrapper.primaryAxisSizingMode = "FIXED";
+        wrapper.resizeWithoutConstraints(FRAME_FIXED_WIDTH, targetH);
+        wrapper.x = nodeX;
+        wrapper.y = nodeY;
+        wrappers.push(wrapper);
+    }
+    figma.currentPage.selection = wrappers;
+    sendStatus(`${wrappers.length} framed 540px`, "success");
+}
 // ─── UI Setup ────────────────────────────────────────────────────
 figma.showUI(__html__, { width: 320, height: 420, themeColors: true });
 // ─── Translator helpers ──────────────────────────────────────────
@@ -899,7 +987,10 @@ figma.ui.onmessage = async (msg) => {
             await darkThemeCopy();
             break;
         case "wrap-selection":
-            await wrapToNewSelection();
+            await wrapToNewSelection(true);
+            break;
+        case "wrap-selection-light":
+            await wrapToNewSelection(false);
             break;
         case "calc-size":
             await calculateSize();
@@ -916,14 +1007,28 @@ figma.ui.onmessage = async (msg) => {
         case "toggle-dev-status":
             await toggleDevStatus();
             break;
+        case "move-to-zero": {
+            const sel = figma.currentPage.selection;
+            if (sel.length === 1) {
+                sel[0].x = 0;
+                sel[0].y = 0;
+            }
+            break;
+        }
         case "fix-selection":
-            await fixSelection();
+            await fixSelection(true);
+            break;
+        case "fix-selection-light":
+            await fixSelection(false);
             break;
         case "create-art-block":
             await createArtBlock();
             break;
         case "frame-border":
             await frameWithBorder();
+            break;
+        case "frame-540":
+            await frame540();
             break;
         case "request-selection":
             sendSelectionInfo();
