@@ -6,6 +6,8 @@ const SECTION_PADDING = 100;
 // ─── Helpers ─────────────────────────────────────────────────────
 function sendStatus(text, status) {
     figma.ui.postMessage({ type: "status", text, status });
+    if (text)
+        figma.notify(text, status === "error" ? { error: true } : undefined);
 }
 async function findDarkMode() {
     // 1. Try local collections
@@ -436,6 +438,7 @@ async function alignSections() {
     if (selection.length > 0) {
         sections = selection.filter((n) => n.type === "SECTION");
     }
+    const usedSelection = sections.length > 0;
     if (sections.length === 0) {
         // Find all sections on the current page
         for (const child of figma.currentPage.children) {
@@ -450,10 +453,9 @@ async function alignSections() {
     }
     // Sort by current x position to preserve order
     sections.sort((a, b) => a.x - b.x);
-    // Always start from the leftmost section
-    const baseX = sections[0].x;
-    const baseY = sections[0].y;
-    // Lay out all sections in a single row going right, no wrapping
+    // Selection → start from the leftmost selected section; nothing selected → from (0, 0)
+    const baseX = usedSelection ? sections[0].x : 0;
+    const baseY = usedSelection ? sections[0].y : 0;
     let nextX = baseX;
     for (let i = 0; i < sections.length; i++) {
         sections[i].x = nextX;
@@ -553,65 +555,157 @@ async function smartCopy() {
     figma.currentPage.selection = [clone];
     figma.viewport.scrollAndZoomIntoView([clone]);
 }
-// ─── Feature 5: Expand Section ───────────────────────────────────
-const MIN_GAP = 80;
-async function expandSection() {
+// ─── Feature 5: Expand Section (ported, row-aware, both directions) ──
+const SECTION_EXPAND_BARE = 620; // empty expand for a bare section (540 + 80)
+const FRAMEISH = new Set(["FRAME", "COMPONENT", "INSTANCE"]);
+// Shift sections that sit on the same row and to the right of `fromX`
+function shiftRowSectionsRight(section, fromX, by) {
+    for (const s of figma.currentPage.children) {
+        if (s.type !== "SECTION" || s.id === section.id)
+            continue;
+        const sec = s;
+        if (sec.x >= fromX &&
+            sec.y < section.y + section.height &&
+            sec.y + sec.height > section.y) {
+            sec.x += by;
+        }
+    }
+}
+async function expandSectionGrow(direction, duplicate = true) {
     const selection = [...figma.currentPage.selection];
-    const sections = selection.filter((n) => n.type === "SECTION");
-    if (sections.length === 0) {
-        sendStatus("Select a section", "error");
+    if (selection.length !== 1) {
+        sendStatus("Select 1 section or frame", "error");
         return;
     }
-    // Collect all sections on the page to shift neighbors
-    const allPageSections = [];
-    for (const child of figma.currentPage.children) {
-        if (child.type === "SECTION")
-            allPageSections.push(child);
-    }
-    for (const section of sections) {
-        // Get top-row children (light frames, skip sections and dark copies)
-        const children = [];
-        for (const child of section.children) {
-            if (child.type === "SECTION")
-                continue;
-            if (child.name.endsWith(" — Dark"))
-                continue;
-            children.push(child);
+    const node = selection[0];
+    // Frame inside a section → duplicate and shift neighbors
+    if (FRAMEISH.has(node.type)) {
+        const frame = node;
+        const parent = frame.parent;
+        // Standalone frame (not in a section) → simple copy to the side
+        if (!parent || parent.type !== "SECTION") {
+            if (!parent || !("appendChild" in parent) || !("clone" in frame)) {
+                sendStatus("Can't copy this", "error");
+                return;
+            }
+            const clone = frame.clone();
+            clone.y = frame.y;
+            clone.x = direction === "right"
+                ? frame.x + frame.width + H_GAP
+                : frame.x - frame.width - H_GAP;
+            parent.appendChild(clone);
+            figma.currentPage.selection = [clone];
+            figma.viewport.scrollAndZoomIntoView([clone]);
+            return;
         }
-        let expandAmount;
-        if (children.length === 0) {
-            expandAmount = MIN_GAP + 540;
+        const section = parent;
+        const expandBy = frame.width + H_GAP;
+        const originalRight = section.x + section.width;
+        const originalFrameX = frame.x;
+        const originalFrameY = frame.y;
+        section.resizeWithoutConstraints(section.width + expandBy, section.height);
+        for (const c of section.children) {
+            if (!FRAMEISH.has(c.type))
+                continue;
+            if (direction === "right") {
+                if (c.id !== frame.id && c.x > originalFrameX)
+                    c.x += expandBy;
+            }
+            else {
+                if (c.x >= originalFrameX)
+                    c.x += expandBy; // includes the frame itself
+            }
+        }
+        if (duplicate) {
+            const clone = frame.clone();
+            clone.x = direction === "right" ? originalFrameX + frame.width + H_GAP : originalFrameX;
+            clone.y = originalFrameY;
+            section.appendChild(clone);
+            figma.currentPage.selection = [clone];
         }
         else {
-            // Sort by x to find gaps and last object
-            children.sort((a, b) => a.x - b.x);
-            // Calculate gaps between consecutive objects
-            const gaps = [];
-            for (let i = 1; i < children.length; i++) {
-                const prevRight = children[i - 1].x + children[i - 1].width;
-                const gap = children[i].x - prevRight;
-                if (gap > 0)
-                    gaps.push(gap);
-            }
-            const gapSize = gaps.length > 0 ? gaps[0] : MIN_GAP;
-            const lastWidth = children[children.length - 1].width;
-            expandAmount = gapSize + lastWidth;
+            figma.currentPage.selection = [section];
         }
-        section.resizeWithoutConstraints(section.width + expandAmount, section.height);
-        // Cascade-shift sections to the right if gap < SECTION_GAP
-        const rightSections = allPageSections
-            .filter((s) => s !== section && s.x >= section.x)
-            .sort((a, b) => a.x - b.x);
-        let prevRight = section.x + section.width;
-        for (const other of rightSections) {
-            const gap = other.x - prevRight;
-            if (gap >= SECTION_GAP)
-                break;
-            other.x = prevRight + SECTION_GAP;
-            prevRight = other.x + other.width;
-        }
+        shiftRowSectionsRight(section, originalRight, expandBy);
+        return;
     }
-    // No status — expand is instant, no Done delay
+    // Bare section → grow by a fixed amount
+    if (node.type !== "SECTION") {
+        sendStatus("Select 1 section or frame", "error");
+        return;
+    }
+    const section = node;
+    const originalRight = section.x + section.width;
+    section.resizeWithoutConstraints(section.width + SECTION_EXPAND_BARE, section.height);
+    if (direction === "left") {
+        for (const child of section.children)
+            child.x += SECTION_EXPAND_BARE;
+    }
+    shiftRowSectionsRight(section, originalRight, SECTION_EXPAND_BARE);
+}
+// ─── Feature: Replace with Instance (ported) ─────────────────────
+async function replaceWithInstance() {
+    const selection = [...figma.currentPage.selection];
+    if (selection.length < 2) {
+        sendStatus("Select objects + reference last", "error");
+        return;
+    }
+    // Reference = last node added to selection, fallback to last in array
+    const source = (lastAddedId && selection.find((n) => n.id === lastAddedId)) ||
+        selection[selection.length - 1];
+    if (!("clone" in source)) {
+        sendStatus("Reference can't be cloned", "error");
+        return;
+    }
+    const targets = selection.filter((n) => n.id !== source.id);
+    let count = 0;
+    for (const target of targets) {
+        const parent = target.parent;
+        if (!parent || !("insertChild" in parent))
+            continue;
+        const x = target.x;
+        const y = target.y;
+        const w = target.width;
+        const h = target.height;
+        const constraints = "constraints" in target ? target.constraints : null;
+        const index = parent.children.indexOf(target);
+        const clone = source.clone();
+        parent.insertChild(index, clone);
+        clone.x = x;
+        clone.y = y;
+        if ("resize" in clone) {
+            try {
+                clone.resize(w, h);
+            }
+            catch (_e) { }
+        }
+        if (constraints && "constraints" in clone)
+            clone.constraints = constraints;
+        target.remove();
+        count++;
+    }
+    sendStatus(`Replaced ${count}`, "success");
+}
+// ─── Feature: Find Similar (ported) ──────────────────────────────
+async function findSimilar() {
+    const selection = [...figma.currentPage.selection];
+    if (selection.length !== 1) {
+        sendStatus("Select 1 object", "error");
+        return;
+    }
+    const target = selection[0];
+    const name = target.name;
+    const w = Math.round(target.width);
+    const h = Math.round(target.height);
+    const candidates = figma.currentPage.findAllWithCriteria({ types: [target.type] });
+    const matches = candidates.filter((n) => n.name === name && Math.round(n.width) === w && Math.round(n.height) === h);
+    if (matches.length <= 1) {
+        sendStatus("No similar found", "error");
+        return;
+    }
+    figma.currentPage.selection = matches;
+    figma.viewport.scrollAndZoomIntoView(matches);
+    sendStatus(`Found ${matches.length} similar`, "success");
 }
 // ─── Feature 6: Fix Selection ────────────────────────────────────
 async function fixSelection(withDark = true) {
@@ -946,7 +1040,50 @@ async function frame540() {
     sendStatus(`${wrappers.length} framed 540px`, "success");
 }
 // ─── UI Setup ────────────────────────────────────────────────────
-figma.showUI(__html__, { width: 320, height: 420, themeColors: true });
+figma.showUI(__html__, { width: 250, height: 62, themeColors: true });
+// ─── Window positioning ──────────────────────────────────────────
+let uiPos = "center";
+let lastW = 250;
+let lastH = 62;
+function repositionUI(pos) {
+    const b = figma.viewport.bounds;
+    const z = figma.viewport.zoom || 1;
+    const wc = lastW / z;
+    const hc = lastH / z;
+    const m = 16 / z;
+    let x, y;
+    switch (pos) {
+        case "tl":
+            x = b.x + m;
+            y = b.y + m;
+            break;
+        case "tr":
+            x = b.x + b.width - wc - m;
+            y = b.y + m;
+            break;
+        case "bl":
+            x = b.x + m;
+            y = b.y + b.height - hc - m * 3.5;
+            break;
+        case "br":
+            x = b.x + b.width - wc - m;
+            y = b.y + b.height - hc - m * 3.5;
+            break;
+        default:
+            x = b.x + (b.width - wc) / 2;
+            y = b.y + (b.height - hc) / 2;
+            break;
+    }
+    try {
+        figma.ui.reposition(x, y);
+    }
+    catch (_e) { }
+}
+(async () => {
+    uiPos = (await figma.clientStorage.getAsync("uiPos")) || "center";
+    figma.ui.postMessage({ type: "pos", pos: uiPos });
+    repositionUI(uiPos);
+})();
 // ─── Translator helpers ──────────────────────────────────────────
 function findAllTextNodes(nodes) {
     let result = [];
@@ -960,7 +1097,6 @@ function findAllTextNodes(nodes) {
     }
     return result;
 }
-let currentTab = "tools";
 function sendSelectionInfo() {
     const sel = figma.currentPage.selection;
     const count = sel.length;
@@ -968,7 +1104,7 @@ function sendSelectionInfo() {
     const hasFrames = sel.some((n) => n.type === "FRAME" || n.type === "COMPONENT" || n.type === "INSTANCE");
     const allDark = count > 0 && sel.every((n) => n.name.endsWith(" — Dark"));
     const hasAny = count > 0;
-    const textCount = currentTab === "translator" ? findAllTextNodes(sel).length : 0;
+    const textCount = findAllTextNodes(sel).length;
     figma.ui.postMessage({
         type: "selection-info",
         count,
@@ -979,7 +1115,22 @@ function sendSelectionInfo() {
         textCount,
     });
 }
-figma.on("selectionchange", sendSelectionInfo);
+// Track the last node added to the selection (for Replace's reference object)
+let lastAddedId = null;
+let prevSelIds = new Set();
+function trackLastAdded() {
+    const ids = figma.currentPage.selection.map((n) => n.id);
+    for (const id of ids) {
+        if (!prevSelIds.has(id))
+            lastAddedId = id;
+    }
+    prevSelIds = new Set(ids);
+}
+figma.on("selectionchange", () => {
+    trackLastAdded();
+    sendSelectionInfo();
+});
+trackLastAdded();
 sendSelectionInfo();
 figma.ui.onmessage = async (msg) => {
     switch (msg.type) {
@@ -999,7 +1150,16 @@ figma.ui.onmessage = async (msg) => {
             await alignSections();
             break;
         case "expand-section":
-            await expandSection();
+            await expandSectionGrow("right");
+            break;
+        case "expand-section-left":
+            await expandSectionGrow("left");
+            break;
+        case "replace-instance":
+            await replaceWithInstance();
+            break;
+        case "find-similar":
+            await findSimilar();
             break;
         case "smart-copy":
             await smartCopy();
@@ -1033,12 +1193,48 @@ figma.ui.onmessage = async (msg) => {
         case "request-selection":
             sendSelectionInfo();
             break;
-        case "tab-change":
-            currentTab = msg.tab;
-            sendSelectionInfo();
+        case "notify":
+            figma.notify(msg.text, msg.error ? { error: true } : undefined);
+            break;
+        case "get-order": {
+            const order = (await figma.clientStorage.getAsync("toolOrder")) || null;
+            console.log("get-order:", order);
+            figma.ui.postMessage({ type: "order", order });
+            break;
+        }
+        case "save-order":
+            await figma.clientStorage.setAsync("toolOrder", msg.order);
+            break;
+        case "get-theme": {
+            const light = (await figma.clientStorage.getAsync("lightTheme")) || false;
+            console.log("get-theme:", light);
+            figma.ui.postMessage({ type: "theme", light });
+            break;
+        }
+        case "save-theme":
+            await figma.clientStorage.setAsync("lightTheme", msg.light);
+            break;
+        case "reset-all":
+            await figma.clientStorage.deleteAsync("uiPos");
+            await figma.clientStorage.deleteAsync("lightTheme");
+            await figma.clientStorage.deleteAsync("toolOrder");
+            uiPos = "center";
+            figma.ui.postMessage({ type: "pos", pos: uiPos });
+            figma.ui.postMessage({ type: "theme", light: false });
+            figma.ui.postMessage({ type: "order", order: null });
+            repositionUI(uiPos);
+            figma.notify("Settings reset to default");
+            break;
+        case "set-pos":
+            uiPos = msg.pos || "center";
+            await figma.clientStorage.setAsync("uiPos", uiPos);
+            repositionUI(uiPos);
             break;
         case "resize":
-            figma.ui.resize(320, msg.height);
+            lastW = msg.width || 320;
+            lastH = msg.height;
+            figma.ui.resize(lastW, lastH);
+            repositionUI(uiPos);
             break;
         case "run-translation": {
             const textNodes = findAllTextNodes(figma.currentPage.selection);

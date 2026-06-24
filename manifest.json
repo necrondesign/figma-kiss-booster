@@ -1,4 +1,5 @@
 {
+  "id": "kiss-booster-plugin",
   "name": "Kiss booster",
   "api": "1.0.0",
   "main": "dist/src/code.js",

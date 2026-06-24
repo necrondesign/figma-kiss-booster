@@ -1,745 +1,696 @@
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="utf-8">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  :root {
+    --bg:#2c2c2c; --btn:#383838; --btn-hover:#444;
+    --txt:#fff; --icon:rgba(255,255,255,.85); --label:rgba(255,255,255,.5); --muted:rgba(255,255,255,.4);
+    --chk-border:rgba(255,255,255,.7); --chk-bg:#fff; --chk-check:#2c2c2c;
+  }
+  body.light {
+    --bg:#ffffff; --btn:#ebebeb; --btn-hover:#dedede;
+    --txt:#1e1e1e; --icon:rgba(0,0,0,.8); --label:rgba(0,0,0,.55); --muted:rgba(0,0,0,.4);
+    --chk-border:rgba(0,0,0,.45); --chk-bg:#0c8ce9; --chk-check:#fff;
+  }
+
   body {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    font-size: 11px;
-    color: #fff;
-    background: #2c2c2c;
-    width: 320px;
-    overflow: hidden;
+    font-family:'Inter', system-ui, -apple-system, sans-serif;
+    font-size:11px; color:var(--txt); background:var(--bg); overflow:hidden;
+    transition:background .15s;
   }
 
-  /* Tabs */
-  .tabs {
-    display: flex;
-    align-items: center;
-    padding: 16px;
-    border-bottom: 1px solid #444;
+  #bar { display:flex; align-items:flex-start; gap:4px; padding:6px; width:max-content; }
+
+  .tool-btn {
+    width:64px; height:50px; border:none; border-radius:6px; background:var(--btn);
+    cursor:pointer; display:flex; flex-direction:column; align-items:flex-start;
+    justify-content:space-between; padding:6px 0 6px 8px; flex-shrink:0; position:relative;
+    transition:background .12s, transform .08s, height .15s ease-out, padding .15s ease-out;
   }
-  .tabs-left {
-    display: flex;
-    gap: 8px;
-    flex: 1;
+  .tool-btn:hover { background:var(--btn-hover); }
+  .tool-btn:active { transform:scale(.94); }
+  .tool-btn.narrow { width:34px; align-items:center; padding:6px 0; }
+  .tool-btn.primary { background:#0c8ce9; }
+  .tool-btn.primary:hover { background:#0b7fd1; }
+  .tool-btn:disabled { opacity:.35; cursor:default; }
+  .tool-btn:disabled:hover { background:var(--btn); }
+  .tool-btn.primary:disabled:hover { background:#0c8ce9; }
+
+  .btn-icon { display:inline-flex; }
+  .btn-icon svg { stroke:var(--icon); }
+  .tool-btn.primary .btn-icon svg { stroke:#fff; }
+  .btn-label { font-size:10px; color:var(--label); white-space:nowrap; max-width:52px; overflow:hidden; text-overflow:ellipsis; }
+  .tool-btn.primary .btn-label { color:#fff; }
+
+  /* Wrap/Fix checkbox (theme toggle) in the button corner */
+  .wf-check {
+    position:absolute; top:4px; right:4px; width:13px; height:13px; border-radius:3px;
+    border:1.5px solid var(--chk-border); background:transparent;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0;
   }
-  .tab {
-    height: 24px;
-    padding: 0 8px;
-    border-radius: 5px;
-    border: none;
-    font-family: inherit;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.055px;
-    cursor: pointer;
-    line-height: 24px;
-    background: #2c2c2c;
-    color: rgba(255,255,255,0.4);
+  .wf-check.on { background:var(--chk-bg); border-color:var(--chk-bg); }
+  .wf-check svg { width:9px; height:9px; display:none; stroke:var(--chk-check); }
+  .wf-check.on svg { display:block; }
+
+  /* Stacked square mini-buttons (Expand ←/→) */
+  .tool-group { display:flex; flex-direction:column; gap:4px; width:23px; height:50px; flex-shrink:0; }
+  .tool-group .mini {
+    flex:1; width:24px; border:none; border-radius:5px; background:var(--btn); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; transition:background .12s, transform .08s;
   }
-  .tab:hover {
-    background: #383838;
+  .tool-group .mini:hover { background:var(--btn-hover); }
+  .tool-group .mini:active { transform:scale(.9); }
+  .tool-group .mini:disabled { opacity:.35; cursor:default; }
+  .tool-group .mini:disabled:hover { background:var(--btn); }
+  .tool-group .mini svg { stroke:var(--icon); width:15px; height:15px; }
+
+  .arrow-btn {
+    width:22px; height:50px; border:none; border-radius:6px; background:transparent;
+    color:var(--muted); cursor:pointer; display:flex; align-items:center;
+    justify-content:center; flex-shrink:0; transition:background .12s, height .15s ease-out;
   }
-  .tab.active {
-    background: #383838;
-    color: #fff;
+  .arrow-btn:hover { background:var(--btn); color:var(--txt); }
+  .arrow-btn svg { transition:transform .2s; }
+
+  /* Collapsed: hide the extra tools; the arrow reveals them to the right */
+  body:not(.open) .tool-btn.extra,
+  body:not(.open) .tool-group.extra { display:none; }
+  body.open .arrow-btn svg { transform:rotate(180deg); }
+
+  /* Status flash on the clicked button */
+  .tool-btn.flash-ok, .tool-group .mini.flash-ok { background:#0c8ce9 !important; opacity:1 !important; }
+  .tool-btn.flash-err, .tool-group .mini.flash-err { background:#e03e1a !important; opacity:1 !important; }
+
+  /* Flag emoji in the icon slot */
+  .flag { font-size:17px; line-height:1; }
+
+  /* Language mode: bar fills the window, close button absorbs free space */
+  body.lang #bar { width:100%; }
+  .tool-btn.grow { flex:1 1 auto; min-width:64px; align-items:center; justify-content:center; padding:0; }
+
+  /* ── Edit (reorder) mode ── */
+  .check-btn {
+    width:64px; height:50px;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    padding:0;
   }
-  .tab.active:hover {
-    color: #fff;
+  .check-btn .btn-icon { display:flex; align-items:center; justify-content:center; }
+  .check-btn .btn-label { display:none; }
+
+  body.edit:not(.faq):not(.settings) .tool-btn:not(.check-btn):not(.dragging),
+  body.edit:not(.faq):not(.settings) .tool-group:not(.dragging) {
+    animation:wiggle .28s ease-in-out infinite; cursor:grab;
+  }
+  body.edit:not(.faq):not(.settings) .tool-btn:not(.check-btn):hover { background:#383838; }
+  body.edit.dragging-active * { cursor:grabbing !important; }
+
+  @keyframes wiggle {
+    0%,100% { transform:rotate(-1.2deg); }
+    50%     { transform:rotate(1.2deg); }
+  }
+  body.edit:not(.faq):not(.settings) .tool-btn:not(.check-btn):not(.dragging),
+  body.edit:not(.faq):not(.settings) .tool-group:not(.dragging):not(.controls) {
+    animation:wiggle .28s ease-in-out infinite; cursor:grab;
+  }
+  body.edit:not(.faq):not(.settings) .tool-btn:not(.check-btn):hover { background:#383838; }
+  body.edit.dragging-active * { cursor:grabbing !important; }
+
+  .dragging {
+    animation:none !important; opacity:.92; z-index:20;
+    box-shadow:0 6px 16px rgba(0,0,0,.5); cursor:grabbing !important;
   }
 
-  /* Collapse toggle */
-  .collapse-btn {
-    width: 24px;
-    height: 24px;
-    border-radius: 5px;
-    background: #383838;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  .collapse-btn:hover { opacity: 0.85; }
-  .collapse-btn svg {
-    width: 16px;
-    height: 16px;
-    transition: transform 0.2s;
-  }
-  body.collapsed .collapse-btn svg {
-    transform: rotate(0deg);
-  }
-  body:not(.collapsed) .collapse-btn svg {
-    transform: rotate(180deg);
+  #drop-line {
+    position:absolute; top:6px; width:2px; height:50px; border-radius:1px;
+    background:#0c8ce9; display:none; pointer-events:none; z-index:15;
   }
 
-  /* Sections */
-  .section {
-    padding: 0 16px 16px;
-    border-bottom: 1px solid #444;
-  }
-  .section:last-child {
-    border-bottom: none;
-  }
-  .section-label {
-    font-weight: 600;
-    font-size: 11px;
-    letter-spacing: 0.11px;
-    padding: 16px 0;
-    line-height: 16px;
-  }
-  .section-content {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
+  /* ── Settings panel ── */
+  body.settings #bar { width:100%; align-items:center; }
+  body.settings .arrow-btn { display:none; }
 
-  /* Status */
-  .status {
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 5px;
-    padding: 0 8px;
-    height: 24px;
-    line-height: 24px;
-    font-weight: 500;
-    font-size: 11px;
-    letter-spacing: 0.055px;
-    color: #fff;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  /* ── FAQ panel ── */
+  #faq { display:none; flex-direction:column; height:100vh; }
+  body.faq #bar { display:none; }
+  body.faq #faq { display:flex; }
+  .faq-head {
+    display:flex; align-items:center; justify-content:flex-start; gap:10px;
+    padding:12px 14px; border-bottom:1px solid rgba(128,128,128,.22); flex-shrink:0;
   }
-  .status.empty {
-    color: rgba(255,255,255,0.4);
+  .faq-title { font-size:13px; font-weight:600; color:var(--txt); }
+  .faq-back {
+    width:24px; height:24px; border:none; border-radius:5px; background:var(--btn);
+    color:var(--txt); cursor:pointer; font-size:13px; line-height:1;
+    display:flex; align-items:center; justify-content:center; padding:0;
   }
-  .status.error {
-    background: #472f2a;
-    border-color: transparent;
-    color: #e03e1a;
+  .faq-back:hover { background:var(--btn-hover); }
+  .faq-body { display:flex; flex:1; min-height:0; }
+  .faq-list { width:150px; flex-shrink:0; border-right:1px solid rgba(128,128,128,.22); overflow-y:auto; padding:8px; }
+  .faq-item {
+    display:flex; align-items:center; gap:8px;
+    padding:7px 10px; border-radius:5px; cursor:pointer; color:var(--label);
+    font-size:11px; font-weight:500; margin-bottom:2px;
   }
-  .status.success {
-    border-color: rgba(255,255,255,0.1);
-    color: #0c8ce9;
-  }
+  .faq-item:hover { background:var(--btn); color:var(--txt); }
+  .faq-item.active { background:#0c8ce9; color:#fff; }
+  .faq-ico { display:inline-flex; flex-shrink:0; }
+  .faq-ico svg { width:15px; height:15px; stroke:var(--icon); }
+  .faq-item.active .faq-ico svg { stroke:#fff; }
+  .faq-desc { flex:1; padding:16px 18px; overflow-y:auto; }
+  .faq-desc-title { font-size:14px; font-weight:600; color:var(--txt); margin-bottom:10px; }
+  .faq-desc-text { font-size:12px; line-height:1.7; color:var(--label); }
 
-  /* Buttons */
-  .btn {
-    height: 32px;
-    border-radius: 5px;
-    border: none;
-    font-family: inherit;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.055px;
-    cursor: pointer;
-    line-height: 16px;
-    padding: 0 12px;
-    text-align: center;
-    width: 100%;
-    transition: opacity 0.15s;
+  /* ── Open-position picker ── */
+  .tool-btn.pos-btn { padding:0; cursor:default; }
+  .tool-btn.pos-btn:hover { background:var(--btn); }
+  .pos-pick { position:relative; width:100%; height:100%; }
+  .pos-zone {
+    position:absolute; width:18px; height:18px; display:flex; align-items:center;
+    justify-content:center; cursor:pointer; color:var(--muted);
   }
-  .btn:hover { opacity: 0.85; }
-  .btn:active { opacity: 0.7; }
-  .btn:disabled { cursor: default; opacity: 1; }
-  .btn-primary {
-    background: #0c8ce9;
-    color: #fff;
-  }
-  .btn-secondary {
-    background: #383838;
-    color: rgba(255,255,255,0.4);
-  }
-  .btn-processing {
-    background: #383838;
-    color: rgba(255,255,255,0.4);
-    cursor: default;
-  }
-  .btn-processing:hover { opacity: 1; }
-  .btn-done {
-    background: #394360;
-    color: #7cc4f8;
-    cursor: default;
-  }
-  .btn-done:hover { opacity: 1; }
-  .btn-error {
-    background: #e03e1a;
-    color: #fff;
-    cursor: default;
-  }
-  .btn-error:hover { opacity: 1; }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-  .loader {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border: 2px solid rgba(255,255,255,0.2);
-    border-top-color: rgba(255,255,255,0.4);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin-right: 4px;
-    vertical-align: middle;
-  }
-  .btn-row {
-    display: flex;
-    gap: 8px;
-  }
-  .btn-row .btn {
-    flex: 1;
-  }
-  .other-buttons {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  /* Note */
-  .note {
-    font-weight: 600;
-    font-size: 11px;
-    letter-spacing: 0.11px;
-    padding: 16px 0;
-    line-height: 16px;
-    color: #fff;
-  }
-
-  /* Select dropdown */
-  .select-wrapper {
-    display: flex;
-    gap: 1px;
-    align-items: center;
-    width: 100%;
-    height: 24px;
-    cursor: pointer;
-    position: relative;
-  }
-  .select-left {
-    flex: 1;
-    min-width: 0;
-    background: #383838;
-    border-radius: 5px 0 0 5px;
-    padding: 0 8px;
-    height: 24px;
-    line-height: 24px;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.055px;
-    color: #fff;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .select-right {
-    width: 24px;
-    height: 24px;
-    background: #383838;
-    border-radius: 0 5px 5px 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  .select-right svg { width: 16px; height: 16px; }
-  .dropdown-menu {
-    position: absolute;
-    top: -8px;
-    left: 0;
-    width: 157px;
-    background: #1e1e1e;
-    border-radius: 13px;
-    padding: 8px;
-    box-shadow: 0px 2px 5px rgba(0,0,0,0.35), 0px 10px 16px rgba(0,0,0,0.35),
-                inset 0px 0px 0.5px rgba(255,255,255,0.35), inset 0px 0.5px 0px rgba(255,255,255,0.08);
-    z-index: 100;
-  }
-  .dropdown-item {
-    display: flex;
-    align-items: center;
-    padding: 4px 12px;
-    width: 141px;
-    height: 24px;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.055px;
-    color: #fff;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: background 0.1s;
-  }
-  .dropdown-item:hover { background: #0c8ce9; }
-  .dropdown-item .check {
-    width: 16px;
-    height: 16px;
-    margin-right: 4px;
-    flex-shrink: 0;
-  }
-
-  /* Translator footer */
-  .translator-footer {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 16px 16px 0;
-  }
-  .footer-note {
-    font-size: 8px;
-    font-weight: 500;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.1);
-    letter-spacing: 0.055px;
-    text-align: center;
-    padding: 8px 0;
-    line-height: 16px;
-  }
-
-  /* Tab content */
-  .tab-content { display: none; }
-  .tab-content.active { display: block; }
-
-  /* Collapsed mode */
-  .expanded-view { display: block; }
-  .collapsed-view { display: none; }
-  body.collapsed .expanded-view { display: none; }
-  body.collapsed .collapsed-view { display: block; }
-  body.collapsed .tab-content.active { display: block; }
-
-  .compact-grid {
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-  .compact-buttons {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .compact-row {
-    display: flex;
-    gap: 8px;
-  }
-  .compact-row .btn {
-    flex: 1;
-  }
-
+  .pos-zone:hover { color:var(--txt); }
+  .pos-zone.sel { color:#0c8ce9; }
+  .pos-zone.tl { top:5px; left:5px; }
+  .pos-zone.tr { top:5px; right:5px; }
+  .pos-zone.bl { bottom:5px; left:5px; }
+  .pos-zone.br { bottom:5px; right:5px; }
+  .pos-zone.center { top:50%; left:50%; transform:translate(-50%,-50%); }
 </style>
 </head>
 <body>
-
-  <div class="tabs">
-    <div class="tabs-left">
-      <button class="tab active" data-tab="tools">Tools</button>
-      <button class="tab" data-tab="art">Art task</button>
-      <button class="tab" data-tab="translator">Translator</button>
-    </div>
-    <button class="collapse-btn" id="collapse-toggle" onclick="toggleCollapse()">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.647 7.147a.5.5 0 01.706 0L8 8.794l1.647-1.647a.5.5 0 01.706.706l-2 2a.5.5 0 01-.706 0l-2-2a.5.5 0 010-.706z" fill="white"/></svg>
-    </button>
-  </div>
-
-  <!-- Tools Tab -->
-  <div class="tab-content active" id="tab-tools">
-    <!-- Expanded -->
-    <div class="expanded-view">
-      <div class="section">
-        <div class="section-label">Create new selection and make dark theme</div>
-        <div class="section-content">
-          <div class="status empty" id="status-wrap">Select elements</div>
-          <div class="btn-row">
-            <button class="btn btn-secondary" id="btn-wrap-theme" onclick="send('wrap-selection')">Wrap Theme</button>
-            <button class="btn btn-secondary" id="btn-wrap" onclick="send('wrap-selection-light')">Wrap</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-label">Fix & expand selection</div>
-        <div class="section-content">
-          <div class="status empty" id="status-fix">Select elements</div>
-          <div class="btn-row">
-            <button class="btn btn-secondary" id="btn-fix-theme" onclick="send('fix-selection')">Fix Theme</button>
-            <button class="btn btn-secondary" id="btn-fix" onclick="send('fix-selection-light')">Fix</button>
-            <button class="btn btn-secondary" id="btn-expand" onclick="sendInstant('expand-section')">Expand</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-label">Frames</div>
-        <div class="section-content">
-          <div class="status empty" id="status-frames">Select elements</div>
-          <button class="btn btn-secondary" id="btn-540" onclick="send('frame-540')">540px</button>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-label">Other</div>
-        <div class="btn-row">
-          <button class="btn btn-secondary" id="btn-align" onclick="send('align-sections')">Align</button>
-          <button class="btn btn-secondary" id="btn-copy" onclick="sendInstant('smart-copy')">Copy</button>
-          <button class="btn btn-secondary" id="btn-frame" onclick="send('frame-border')">1px</button>
-          <button class="btn btn-secondary" id="btn-dev" onclick="sendInstant('toggle-dev-status')">Dev</button>
-          <button class="btn btn-secondary" id="btn-zero" onclick="sendInstant('move-to-zero')">Zero</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Collapsed -->
-    <div class="collapsed-view">
-      <div class="compact-grid">
-        <div class="compact-buttons">
-          <div class="compact-row">
-            <button class="btn btn-primary" id="c-btn-wrap-theme" onclick="send('wrap-selection')">Wrap Theme</button>
-            <button class="btn btn-secondary" id="c-btn-wrap" onclick="send('wrap-selection-light')">Wrap</button>
-          </div>
-          <div class="compact-row">
-            <button class="btn btn-secondary" id="c-btn-fix-theme" onclick="send('fix-selection')">Fix Theme</button>
-            <button class="btn btn-secondary" id="c-btn-fix" onclick="send('fix-selection-light')">Fix</button>
-            <button class="btn btn-secondary" id="c-btn-expand" onclick="sendInstant('expand-section')">Expand</button>
-          </div>
-          <div class="compact-row">
-            <button class="btn btn-secondary" id="c-btn-540" onclick="send('frame-540')">540px</button>
-          </div>
-          <div class="compact-row">
-            <button class="btn btn-secondary" id="c-btn-align" onclick="send('align-sections')">Align</button>
-            <button class="btn btn-secondary" id="c-btn-copy" onclick="sendInstant('smart-copy')">Copy</button>
-            <button class="btn btn-secondary" id="c-btn-frame" onclick="send('frame-border')">1px</button>
-            <button class="btn btn-secondary" id="c-btn-dev" onclick="sendInstant('toggle-dev-status')">Dev</button>
-            <button class="btn btn-secondary" id="c-btn-zero" onclick="sendInstant('move-to-zero')">Zero</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Art Task Tab -->
-  <div class="tab-content" id="tab-art">
-    <div class="expanded-view">
-      <div class="section">
-        <div class="section-label">Art task</div>
-        <div class="section-content">
-          <div class="status empty" id="status-art">Select elements</div>
-          <button class="btn btn-secondary" id="btn-art" onclick="send('create-art-block')">Create art task</button>
-        </div>
-      </div>
-    </div>
-    <div class="collapsed-view">
-      <div class="compact-grid">
-        <div class="status empty" id="c-status-art">Select elements</div>
-        <button class="btn btn-secondary" id="c-btn-art" onclick="send('create-art-block')">Create art task</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Translator Tab -->
-  <div class="tab-content" id="tab-translator">
-    <div class="expanded-view">
-      <div class="section">
-        <div class="section-label">Translation to</div>
-        <div style="position:relative;" class="lang-select-wrap">
-          <div class="select-wrapper" onclick="toggleLangMenu(this)">
-            <div class="select-left lang-label">Russian</div>
-            <div class="select-right"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.647 7.147a.5.5 0 01.706 0L8 8.794l1.647-1.647a.5.5 0 01.706.706l-2 2a.5.5 0 01-.706 0l-2-2a.5.5 0 010-.706z" fill="white"/></svg></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-label">Selection</div>
-        <div class="status empty" id="status-translate">Select elements</div>
-      </div>
-
-      <div class="translator-footer">
-        <button class="btn btn-secondary" id="btn-translate" onclick="runTranslate()" style="width:100%;">Translate selection</button>
-        <div class="footer-note">work on google translate engine</div>
-      </div>
-    </div>
-    <div class="collapsed-view">
-      <div class="compact-grid">
-        <div style="position:relative;" class="lang-select-wrap">
-          <div class="select-wrapper" onclick="toggleLangMenu(this)">
-            <div class="select-left lang-label">Russian</div>
-            <div class="select-right"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.647 7.147a.5.5 0 01.706 0L8 8.794l1.647-1.647a.5.5 0 01.706.706l-2 2a.5.5 0 01-.706 0l-2-2a.5.5 0 010-.706z" fill="white"/></svg></div>
-          </div>
-        </div>
-        <button class="btn btn-secondary" id="c-btn-translate" onclick="runTranslate()">Translate selection</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="dropdown-menu" id="lang-menu" style="display:none;position:fixed;"></div>
+  <div id="bar"></div>
+  <div id="drop-line"></div>
+  <div id="faq"></div>
 
 <script>
-  let isCollapsed = false;
-  let activeTab = 'tools';
-
-  // Measure the actual content height and resize the plugin window to fit
-  function fitHeight() {
-    const tabs = document.querySelector('.tabs');
-    const active = document.querySelector('.tab-content.active');
-    if (!tabs || !active) return;
-    const view = active.querySelector(isCollapsed ? '.collapsed-view' : '.expanded-view');
-    const contentH = view ? view.scrollHeight : active.scrollHeight;
-    const h = Math.ceil(tabs.getBoundingClientRect().height + contentH);
-    parent.postMessage({ pluginMessage: { type: 'resize', height: h } }, '*');
-  }
-
-  function toggleCollapse() {
-    isCollapsed = !isCollapsed;
-    document.body.classList.toggle('collapsed', isCollapsed);
-    fitHeight();
-  }
-
-  // Tab switching
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-      tab.classList.add('active');
-      activeTab = tab.dataset.tab;
-      document.getElementById('tab-' + activeTab).classList.add('active');
-      fitHeight();
-      parent.postMessage({ pluginMessage: { type: 'tab-change', tab: activeTab } }, '*');
-    });
-  });
-
-  let lastClickedBtn = null;
-
-  function send(action) {
-    const btn = event.currentTarget;
-    if (!btn.dataset.text) btn.dataset.text = btn.textContent;
-    lastClickedBtn = btn;
-    btn.className = 'btn btn-processing';
-    btn.disabled = true;
-    btn.innerHTML = '<span class="loader"></span>Processing';
-    parent.postMessage({ pluginMessage: { type: action } }, '*');
-  }
-
-  function sendInstant(action) {
-    parent.postMessage({ pluginMessage: { type: action } }, '*');
-  }
-
-  function updateStatus(id, text, type) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.textContent = text;
-    el.className = 'status' + (type ? ' ' + type : '');
-  }
-
-  function setBtn(id, active) {
-    const btn = document.getElementById(id);
-    if (!btn) return;
-    if (lastClickedBtn === btn) return;
-    btn.className = 'btn ' + (active ? 'btn-primary' : 'btn-secondary');
-    btn.disabled = !active;
-  }
-
-  window.onmessage = (e) => {
-    const msg = e.data.pluginMessage;
-    if (!msg) return;
-
-    if (msg.type === 'status') {
-      if (lastClickedBtn) {
-        const btnId = lastClickedBtn.id;
-        const statusMap = {
-          'btn-wrap-theme': 'status-wrap',
-          'btn-wrap': 'status-wrap',
-          'btn-fix-theme': 'status-fix',
-          'btn-fix': 'status-fix',
-          'btn-expand': 'status-fix',
-          'btn-align': null,
-          'btn-frame': null,
-          'btn-540': 'status-frames',
-          'btn-art': 'status-art',
-          'c-btn-art': 'c-status-art',
-        };
-        const statusId = statusMap[btnId];
-        if (statusId) {
-          updateStatus(statusId, msg.text, msg.status);
-        }
-      }
-
-      if (lastClickedBtn) {
-        const btn = lastClickedBtn;
-
-        if (msg.status === 'error') {
-          btn.className = 'btn btn-error';
-          btn.innerHTML = msg.text;
-        } else {
-          btn.className = 'btn btn-done';
-          btn.innerHTML = '&#10003; Done';
-        }
-        btn.disabled = true;
-
-        setTimeout(() => {
-          btn.innerHTML = btn.dataset.text;
-          lastClickedBtn = null;
-          parent.postMessage({ pluginMessage: { type: 'request-selection' } }, '*');
-        }, 2000);
-      }
-    }
-
-    if (msg.type === 'selection-info') {
-      const { count, hasSection, hasFrames, allDark, hasAny } = msg;
-
-      const sel = count === 0 ? 'Select elements' : count + ' selected';
-
-      // Wrap
-      const canWrap = hasFrames && !hasSection && !allDark && count > 0;
-      updateStatus('status-wrap', sel, canWrap ? '' : 'empty');
-      setBtn('btn-wrap-theme', canWrap);
-      setBtn('btn-wrap', canWrap);
-      setBtn('c-btn-wrap-theme', canWrap);
-      setBtn('c-btn-wrap', canWrap);
-
-      // Fix/Expand
-      updateStatus('status-fix', sel, hasSection ? '' : 'empty');
-      setBtn('btn-fix-theme', hasSection);
-      setBtn('btn-fix', hasSection);
-      setBtn('btn-expand', hasSection);
-      setBtn('c-btn-fix-theme', hasSection);
-      setBtn('c-btn-fix', hasSection);
-      setBtn('c-btn-expand', hasSection);
-
-      // Align
-      setBtn('btn-align', true);
-      setBtn('c-btn-align', true);
-
-      // Smart copy: needs any selection
-      setBtn('btn-copy', hasAny);
-      setBtn('c-btn-copy', hasAny);
-
-      // Frame border
-      setBtn('btn-frame', hasAny);
-      setBtn('c-btn-frame', hasAny);
-
-      // 540px frame: needs any selection
-      updateStatus('status-frames', sel, hasAny ? '' : 'empty');
-      setBtn('btn-540', hasAny);
-      setBtn('c-btn-540', hasAny);
-
-      // Zero: needs exactly 1 selected
-      const isOne = count === 1;
-      setBtn('btn-zero', isOne);
-      setBtn('c-btn-zero', isOne);
-
-      // Art
-      updateStatus('status-art', sel, hasAny ? '' : 'empty');
-      updateStatus('c-status-art', sel, hasAny ? '' : 'empty');
-      setBtn('btn-art', hasAny);
-      setBtn('c-btn-art', hasAny);
-
-      // Translator
-      const tc = msg.textCount || 0;
-      const hasText = tc > 0;
-      updateStatus('status-translate', hasText ? tc + ' text layers' : 'Select elements', hasText ? '' : 'empty');
-      setBtn('btn-translate', hasText);
-      setBtn('c-btn-translate', hasText);
-    }
-
-    if (msg.type === 'start-api-call') {
-      translateViaGoogle(msg.payload, msg.target);
-    }
-    if (msg.type === 'apply-data-success') {
-      const btn = document.getElementById('btn-translate');
-      if (btn) {
-        btn.className = 'btn btn-done';
-        btn.innerHTML = '&#10003; Done';
-        btn.disabled = true;
-        setTimeout(() => {
-          btn.innerHTML = btn.dataset.text || 'Translate selection';
-          parent.postMessage({ pluginMessage: { type: 'request-selection' } }, '*');
-        }, 2000);
-      }
-    }
-    if (msg.type === 'translate-error') {
-      const btn = document.getElementById('btn-translate');
-      if (btn) {
-        btn.className = 'btn btn-error';
-        btn.innerHTML = 'Error';
-        btn.disabled = true;
-        setTimeout(() => {
-          btn.innerHTML = btn.dataset.text || 'Translate selection';
-          parent.postMessage({ pluginMessage: { type: 'request-selection' } }, '*');
-        }, 2000);
-      }
-    }
+  // ── Icons (outline, inherit stroke) ──
+  const S = (d) => `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  const IC = {
+    frame:    S('<path d="M2 6V3h3"/><path d="M12 3h4v3"/><path d="M16 12v3h-4"/><path d="M6 15H2v-3"/>'),
+    grid:     S('<rect x="2" y="2" width="5.5" height="5.5" rx="1"/><rect x="10.5" y="2" width="5.5" height="5.5" rx="1"/><rect x="2" y="10.5" width="5.5" height="5.5" rx="1"/><rect x="10.5" y="10.5" width="5.5" height="5.5" rx="1"/>'),
+    contrast: S('<circle cx="9" cy="9" r="6"/><path d="M9 3a6 6 0 000 12z" fill="rgba(255,255,255,.85)"/>'),
+    chevronL: S('<path d="M10 4L5 9l5 5"/><line x1="5" y1="9" x2="14" y2="9"/>'),
+    chevronR: S('<path d="M8 4l5 5-5 5"/><line x1="13" y1="9" x2="4" y2="9"/>'),
+    align:    S('<line x1="3" y1="4" x2="15" y2="4"/><line x1="3" y1="9" x2="11" y2="9"/><line x1="3" y1="14" x2="13" y2="14"/>'),
+    width:    S('<path d="M3 9h12"/><path d="M6 6L3 9l3 3"/><path d="M12 6l3 3-3 3"/>'),
+    copy:     S('<rect x="6" y="6" width="9" height="9" rx="1.5"/><path d="M3 12V4a1 1 0 011-1h8"/>'),
+    swap:     S('<path d="M4 6h10"/><path d="M11 3l3 3-3 3"/><path d="M14 12H4"/><path d="M7 9l-3 3 3 3"/>'),
+    scissors: S('<circle cx="5" cy="5" r="2.5"/><circle cx="5" cy="13" r="2.5"/><path d="M7.2 6.8L15 14"/><path d="M7.2 11.2L15 4"/>'),
+    search:   S('<circle cx="7.5" cy="7.5" r="5"/><path d="M11.5 11.5L16 16"/>'),
+    image:    S('<rect x="2" y="3" width="14" height="12" rx="1.5"/><circle cx="6.5" cy="7.5" r="1.5"/><path d="M16 12l-4-4-6 6"/>'),
+    translate:S('<circle cx="9" cy="9" r="7"/><line x1="2" y1="9" x2="16" y2="9"/><ellipse cx="9" cy="9" rx="2.5" ry="7"/>'),
+    code:     S('<path d="M6 4L2 9l4 5"/><path d="M12 4l4 5-4 5"/>'),
+    target:   S('<circle cx="9" cy="9" r="6"/><circle cx="9" cy="9" r="2"/>'),
+    gear:     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
+    sun:      S('<circle cx="9" cy="9" r="3.2"/><path d="M9 1.8v2M9 14.2v2M1.8 9h2M14.2 9h2M4 4l1.4 1.4M12.6 12.6l1.4 1.4M4 14l1.4-1.4M12.6 5.4l1.4-1.4"/>'),
+    moon:     S('<path d="M14.5 10.8A6 6 0 117.2 3.5a4.8 4.8 0 007.3 7.3z"/>'),
+    help:     S('<circle cx="9" cy="9" r="7"/><path d="M7 7a2 2 0 113 1.7c-.6.4-1 .8-1 1.6"/><line x1="9" y1="13" x2="9" y2="13.2"/>'),
+    check:    S('<path d="M3 9l4 4 8-8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'),
+    sliders:  S('<path d="M4 9h6M4 9v4M4 13h12M16 13v-4M10 5h6M10 5v8M10 13h6M16 13v-4M16 9h2M16 9v4"/><line x1="6" y1="9" x2="6" y2="9.01"/><line x1="6" y1="13" x2="6" y2="13.01"/><line x1="12" y1="5" x2="12" y2="5.01"/><line x1="12" y1="13" x2="12" y2="13.01"/><line x1="18" y1="9" x2="18" y2="9.01"/>'),
   };
 
-  // ── Translator logic ──
-  const LANGUAGES = [
-    { code: 'ru', name: 'Russian' },
-    { code: 'en', name: 'English' },
-    { code: 'de', name: 'German' },
-    { code: 'pl', name: 'Polish' },
-    { code: 'ar', name: 'Arabic' },
-    { code: 'zh', name: 'Chinese' },
-    { code: 'es', name: 'Spanish' },
-    { code: 'fr', name: 'French' },
-    { code: 'pt', name: 'Portuguese' },
-    { code: 'ja', name: 'Japanese' },
-    { code: 'ko', name: 'Korean' },
+  // ── Enable rules vs selection ──
+  const RULES = {
+    wrap:    s => s.hasFrames && !s.hasSection && !s.allDark && s.count > 0,
+    wrapfix: s => s.hasSection || (s.hasFrames && !s.allDark && s.count > 0),
+    section: s => s.hasSection,
+    one:     s => s.count === 1,
+    any:     s => s.hasAny,
+    two:     s => s.count >= 2,
+    text:    s => (s.textCount || 0) > 0,
+    always:  s => true,
+  };
+
+  // ── Tools (left → right) ──
+  const TOOLS = [
+    { id:'wrap', wrapfix: true, icon: IC.frame, label: 'Wrap', rule: 'wrapfix', primary: true },
+    { id:'align', icon: IC.align,    label: 'Align',    cmd: 'align-sections', rule: 'always' },
+    { id:'540',     icon: IC.width,    label: '540px',    cmd: 'frame-540',      rule: 'any' },
+    { id:'expand', group: [
+      { icon: IC.chevronL, cmd: 'expand-section-left', rule: 'one', title: 'Copy left' },
+      { icon: IC.chevronR, cmd: 'expand-section',      rule: 'one', title: 'Copy right' },
+    ]},
+    { id:'find',    icon: IC.search,   label: 'Find',     cmd: 'find-similar',   rule: 'one',  extra: true },
+    { id:'replace', icon: IC.swap,     label: 'Replace',  cmd: 'replace-instance', rule: 'two', extra: true },
+    { id:'1px',     icon: IC.scissors, label: '1px',      cmd: 'frame-border',   rule: 'any',  extra: true },
+    { id:'art',     icon: IC.image,    label: 'Art',      cmd: 'create-art-block', rule: 'any', extra: true },
+    { id:'translate', icon: IC.translate, label: 'Translate', cmd: '__translate', rule: 'text', extra: true },
+    { id:'dev',     icon: IC.code,     label: 'Dev',      cmd: 'toggle-dev-status', rule: 'always', extra: true },
+    { id:'zero',    icon: IC.target,   label: 'Zero',     cmd: 'move-to-zero',   rule: 'one',  extra: true },
+    { id:'settings', settingsBtn: true },
   ];
 
-  let targetLang = 'ru';
+  let selInfo = { count:0, hasSection:false, hasFrames:false, allDark:false, hasAny:false, textCount:0 };
 
-  const checkSvg = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11.584 3.723a.5.5 0 01.832.554l-5 7.5a.5.5 0 01-.77.077l-3-3a.5.5 0 01.708-.708l2.568 2.569L11.584 3.723z" fill="white"/></svg>';
-  const emptySvg = '<div style="width:16px;height:16px;"></div>';
+  function post(type, extra) { parent.postMessage({ pluginMessage: Object.assign({ type }, extra || {}) }, '*'); }
 
-  function buildLangMenu() {
-    const menu = document.getElementById('lang-menu');
-    menu.innerHTML = LANGUAGES.map(l =>
-      '<div class="dropdown-item" onclick="selectLang(\'' + l.code + '\')">' +
-        '<span class="check">' + (l.code === targetLang ? checkSvg : emptySvg) + '</span>' +
-        l.name +
-      '</div>'
-    ).join('');
+  function fitSize() {
+    const bar = document.getElementById('bar');
+    const r = bar.getBoundingClientRect();
+    post('resize', { width: Math.ceil(r.width) + 1, height: Math.ceil(r.height) });
   }
-  buildLangMenu();
 
-  // Fit window to content on initial load
-  requestAnimationFrame(fitHeight);
+  // Flash the last-clicked button to show success / error
+  let lastBtn = null;
+  function flash(status) {
+    const b = lastBtn;
+    if (!b || !b.isConnected) return;
+    const cls = status === 'error' ? 'flash-err' : 'flash-ok';
+    b.classList.add(cls);
+    setTimeout(() => b.classList.remove(cls), 1100);
+  }
 
-  function toggleLangMenu(trigger) {
-    const menu = document.getElementById('lang-menu');
-    if (menu.style.display !== 'none') {
-      menu.style.display = 'none';
-      return;
+  let wfTheme = true; // checkbox: with dark theme
+
+  function onWrapFix() {
+    if (selInfo.hasSection) post(wfTheme ? 'fix-selection' : 'fix-selection-light');
+    else post(wfTheme ? 'wrap-selection' : 'wrap-selection-light');
+  }
+
+  function buildToolbar() {
+    const bar = document.getElementById('bar');
+    bar.innerHTML = '';
+    document.body.classList.remove('lang');
+    document.body.classList.remove('settings');
+    let shown = 0;
+    for (const t of TOOLS) {
+      // Collapsed view shows only the first 3 reorderable tools; settings/faq/pos hidden
+      let isExtra;
+      if (t.settingsBtn || t.faqBtn || t.posBtn) isExtra = true;
+      else if (shown < 3) { isExtra = false; shown++; }
+      else isExtra = true;
+
+      if (t.settingsBtn) {
+        if (editMode) {
+          // In edit mode: show checkmark button
+          const cb = document.createElement('button');
+          cb.className = 'tool-btn check-btn' + (isExtra ? ' extra' : '');
+          cb.title = 'Save and exit reorder mode';
+          cb.innerHTML = `<span class="btn-icon">${IC.check}</span>`;
+          cb.onclick = () => toggleEdit(null);
+          bar.appendChild(cb);
+        } else {
+          // Normal mode: show settings button
+          const sb = document.createElement('button');
+          sb.className = 'tool-btn' + (isExtra ? ' extra' : '');
+          sb.dataset.id = 'settings-btn';
+          sb.title = 'Settings';
+          sb.innerHTML = `<span class="btn-icon">${IC.gear}</span><span class="btn-label">Settings</span>`;
+          sb.onclick = openSettings;
+          bar.appendChild(sb);
+        }
+        continue;
+      }
+
+
+
+      if (t.wrapfix) {
+        const b = document.createElement('button');
+        b.className = 'tool-btn' + (isExtra ? ' extra' : '');
+        b.dataset.rule = t.rule;
+        b.title = 'Section → Fix, objects → Wrap (check = with dark theme)';
+        b.innerHTML = `<span class="btn-icon">${t.icon}</span><span class="btn-label">${t.label}</span>`;
+        const chk = document.createElement('span');
+        chk.className = 'wf-check' + (wfTheme ? ' on' : '');
+        chk.title = 'With dark theme';
+        chk.innerHTML = '<svg viewBox="0 0 10 10" fill="none"><path d="M1.8 5l2 2 4.4-5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        chk.onclick = (e) => { e.stopPropagation(); wfTheme = !wfTheme; chk.classList.toggle('on', wfTheme); };
+        b.appendChild(chk);
+        b.onclick = () => { if (editMode || b.disabled) return; lastBtn = b; onWrapFix(); };
+        b.dataset.id = t.id;
+        makeDraggable(b);
+        bar.appendChild(b);
+        continue;
+      }
+      if (t.group) {
+        const g = document.createElement('div');
+        g.className = 'tool-group' + (isExtra ? ' extra' : '');
+        g.dataset.id = t.id;
+        for (const m of t.group) {
+          const mb = document.createElement('button');
+          mb.className = 'mini';
+          mb.dataset.cmd = m.cmd;
+          mb.dataset.rule = m.rule;
+          if (m.title) mb.title = m.title;
+          mb.innerHTML = `<span class="btn-icon">${m.icon}</span>`;
+          mb.onclick = () => onTool(m, mb);
+          g.appendChild(mb);
+        }
+        makeDraggable(g);
+        bar.appendChild(g);
+        continue;
+      }
+      const isGear = t.cmd === '__settings';
+      const isTheme = t.cmd === '__theme';
+      const b = document.createElement('button');
+      b.className = 'tool-btn' + (t.narrow ? ' narrow' : '') + (t.primary ? ' primary' : '') + (isExtra ? ' extra' : '') + (isGear ? ' gear-btn' : '');
+      b.dataset.cmd = t.cmd;
+      b.dataset.rule = t.rule;
+      b.dataset.id = t.id;
+      if (t.label) b.title = t.label;
+      const iconHtml = isTheme ? (lightTheme ? IC.moon : IC.sun) : t.icon;
+      b.innerHTML = `<span class="btn-icon">${iconHtml}</span>` + (t.label ? `<span class="btn-label">${t.label}</span>` : '');
+      if (isGear) {
+        if (editMode) b.classList.add('active');
+        b.onclick = () => toggleEdit(b);
+      } else if (isTheme) {
+        b.onclick = () => { if (!editMode) toggleTheme(); };
+        makeDraggable(b);
+      } else {
+        b.onclick = (e) => onTool(t, b);
+        makeDraggable(b);
+      }
+      bar.appendChild(b);
     }
-    const rect = trigger.parentElement.getBoundingClientRect();
-    menu.style.left = rect.left + 'px';
-    menu.style.top = (rect.top - 8) + 'px';
-    menu.style.display = 'block';
+    const arrow = document.createElement('button');
+    arrow.className = 'arrow-btn';
+    arrow.title = 'Show / hide more';
+    arrow.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    arrow.onclick = () => { document.body.classList.toggle('open'); fitSize(); };
+    bar.appendChild(arrow);
   }
 
-  function selectLang(code) {
-    targetLang = code;
-    const name = LANGUAGES.find(l => l.code === code).name;
-    document.querySelectorAll('.lang-label').forEach(el => el.textContent = name);
-    document.getElementById('lang-menu').style.display = 'none';
-    buildLangMenu();
+  function applyEnable() {
+    document.querySelectorAll('[data-rule]').forEach(b => {
+      const rule = RULES[b.dataset.rule] || RULES.always;
+      b.disabled = !rule(selInfo);
+    });
   }
 
-  document.addEventListener('click', (e) => {
-    const menu = document.getElementById('lang-menu');
-    if (menu && !menu.contains(e.target) && !e.target.closest('.lang-select-wrap')) {
-      menu.style.display = 'none';
+  function onTool(t, btn) {
+    if (editMode || btn.disabled) return;
+    if (t.cmd === '__translate') { renderLangs(); return; }
+    lastBtn = btn;
+    post(t.cmd);
+  }
+
+  // ── Open position ──
+  let uiPos = 'center';
+  function setPos(p, pickEl) {
+    uiPos = p;
+    console.log("setPos:", p);
+    if (pickEl) [...pickEl.querySelectorAll('.pos-zone')].forEach(z => z.classList.toggle('sel', z.dataset.pos === p));
+    post('set-pos', { pos: p });
+  }
+
+  // ── Theme ──
+  let lightTheme = false;
+  function toggleTheme() {
+    lightTheme = !lightTheme;
+    console.log("toggleTheme:", lightTheme);
+    document.body.classList.toggle('light', lightTheme);
+    buildToolbar();
+    applyEnable();
+    fitSize();
+    post('save-theme', { light: lightTheme });
+  }
+
+  // ── Settings panel ──
+  function openSettings() {
+    document.body.classList.add('settings');
+    const bar = document.getElementById('bar');
+    bar.innerHTML = '';
+
+    // Position picker with 4 corners and center (1st)
+    const posBtn = document.createElement('div');
+    posBtn.className = 'tool-btn pos-btn';
+    posBtn.title = 'Position';
+    const pick = document.createElement('div');
+    pick.className = 'pos-pick';
+    const zones = [
+      ['tl', '<path d="M1 5V1h4"/>'],
+      ['tr', '<path d="M5 1h4v4"/>'],
+      ['bl', '<path d="M1 5v4h4"/>'],
+      ['br', '<path d="M5 9h4V5"/>'],
+      ['center', '<path d="M5 1.4v7.2M1.4 5h7.2"/>'],
+    ];
+    for (const [p, d] of zones) {
+      const z = document.createElement('span');
+      z.className = 'pos-zone ' + p + (uiPos === p ? ' sel' : '');
+      z.dataset.pos = p;
+      z.innerHTML = `<svg width="14" height="14" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+      z.onclick = (e) => { e.stopPropagation(); setPos(p, pick); };
+      pick.appendChild(z);
     }
+    posBtn.appendChild(pick);
+    bar.appendChild(posBtn);
+
+    const items = [
+      { icon: lightTheme ? IC.moon : IC.sun, label: 'Theme', onclick: () => { toggleTheme(); openSettings(); } },
+      { icon: IC.sliders, label: 'Reorder', onclick: () => { toggleEdit(null); closeSettings(); } },
+      { icon: IC.help, label: 'FAQ', onclick: () => { openFaq(); } },
+      { icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>', label: 'Reset', onclick: () => { openResetDialog(); } },
+    ];
+
+    for (const item of items) {
+      const b = document.createElement('button');
+      b.className = 'tool-btn';
+      b.title = item.label;
+      b.innerHTML = `<span class="btn-icon">${item.icon}</span><span class="btn-label">${item.label}</span>`;
+      b.onclick = item.onclick;
+      bar.appendChild(b);
+    }
+
+    const back = document.createElement('button');
+    back.className = 'tool-btn grow';
+    back.title = 'Back';
+    back.innerHTML = '<span class="btn-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="1.5" stroke-linecap="round"><path d="M12 4L4 12M4 4l8 8"/></svg></span>';
+    back.onclick = closeSettings;
+    bar.appendChild(back);
+    post('resize', { width: 560 });
+  }
+
+  function closeSettings() {
+    document.body.classList.remove('settings');
+    buildToolbar();
+    applyEnable();
+    fitSize();
+  }
+
+  function openResetDialog() {
+    document.body.classList.add('settings');
+    const bar = document.getElementById('bar');
+    bar.innerHTML = '';
+
+    const msg = document.createElement('div');
+    msg.style.display = 'flex';
+    msg.style.alignItems = 'center';
+    msg.style.justifyContent = 'center';
+    msg.style.flex = '1';
+    msg.style.fontSize = '13px';
+    msg.style.fontWeight = '500';
+    msg.style.color = 'var(--txt)';
+    msg.style.textAlign = 'center';
+    msg.textContent = 'Reset all settings?';
+    bar.appendChild(msg);
+
+    const yesBtn = document.createElement('button');
+    yesBtn.className = 'tool-btn';
+    yesBtn.innerHTML = `<span class="btn-icon">${IC.check}</span><span class="btn-label">Yes</span>`;
+    yesBtn.onclick = () => {
+      post('reset-all');
+      closeSettings();
+    };
+    bar.appendChild(yesBtn);
+
+    const noBtn = document.createElement('button');
+    noBtn.className = 'tool-btn';
+    noBtn.innerHTML = '<span class="btn-icon"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="1.5" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></span><span class="btn-label">No</span>';
+    noBtn.onclick = openSettings;
+    bar.appendChild(noBtn);
+  }
+
+  // ── FAQ ──
+  const FAQ = [
+    { name:'Wrap', icon:IC.frame, desc:'Wraps the selected frames into a section and aligns them in a row. With the corner checkbox on it also creates dark-theme copies. If a section is selected instead, it fixes (re-aligns) it.' },
+    { name:'Align', icon:IC.align, desc:'Lays out sections in a single row. With nothing selected it aligns all sections on the page starting from (0,0); with sections selected it aligns them starting from the leftmost one.' },
+    { name:'540px', icon:IC.width, desc:'Wraps the object into a 540px-wide auto-layout frame with 16px side padding. The object stretches to fill the width; the height is rounded up to the 8px grid.' },
+    { name:'Copy ← / →', icon:IC.chevronR, desc:'Duplicates the selected frame to the left or right. Inside a section it shifts the neighbours and the section; a standalone frame is simply copied to the side.' },
+    { name:'Find', icon:IC.search, desc:'Selects every object on the page that has the same name and size as the selected one.' },
+    { name:'Replace', icon:IC.swap, desc:'Replaces all selected objects with a copy of the reference (the last-selected object), keeping each target’s position and size.' },
+    { name:'1px', icon:IC.scissors, desc:'Wraps the selected objects in a 1px-border frame for clean slicing / export.' },
+    { name:'Art', icon:IC.image, desc:'Fills the selected ArtTask with the target object’s size (and ×3) and draws a green arrow pointing to the object.' },
+    { name:'Translate', icon:IC.translate, desc:'Replaces the toolbar with language flags — pick one to translate all text layers in the selection via Google Translate.' },
+    { name:'Dev', icon:IC.code, desc:'Toggles “Ready for Dev” on the selected sections / frames, or on all sections if nothing is selected.' },
+    { name:'Zero', icon:IC.target, desc:'Moves the single selected object to coordinates (0, 0).' },
+  ];
+
+  function openFaq() {
+    document.body.classList.add('faq');
+    const faq = document.getElementById('faq');
+    faq.innerHTML =
+      `<div class="faq-head"><button class="faq-back" id="faq-back"><span class="btn-icon">${IC.chevronL}</span></button><span class="faq-title">FAQ</span></div>` +
+      '<div class="faq-body"><div class="faq-list" id="faq-list"></div><div class="faq-desc" id="faq-desc"></div></div>';
+    const list = faq.querySelector('#faq-list');
+    FAQ.forEach((f, i) => {
+      const it = document.createElement('div');
+      it.className = 'faq-item';
+      it.innerHTML = `<span class="faq-ico">${f.icon}</span><span>${f.name}</span>`;
+      it.onclick = () => selectFaq(i);
+      list.appendChild(it);
+    });
+    faq.querySelector('#faq-back').onclick = closeFaq;
+    selectFaq(0);
+    post('resize', { width: 560, height: 420 });
+  }
+
+  function selectFaq(i) {
+    const faq = document.getElementById('faq');
+    [...faq.querySelectorAll('.faq-item')].forEach((el, j) => el.classList.toggle('active', j === i));
+    faq.querySelector('#faq-desc').innerHTML =
+      `<div class="faq-desc-title">${FAQ[i].name}</div><div class="faq-desc-text">${FAQ[i].desc}</div>`;
+  }
+
+  function closeFaq() {
+    document.body.classList.remove('faq');
+    buildToolbar();
+    applyEnable();
+    fitSize();
+  }
+
+  // ── Reorder (edit) mode ──
+  let editMode = false;
+  let drag = null;
+
+  function toggleEdit(gearBtn) {
+    editMode = !editMode;
+    document.body.classList.toggle('edit', editMode);
+    if (gearBtn) gearBtn.classList.toggle('active', editMode);
+    if (!editMode) {
+      saveOrder();
+      closeSettings();
+    } else {
+      buildToolbar();
+      applyEnable();
+      fitSize();
+    }
+  }
+
+  function reorderables() {
+    return [...document.getElementById('bar').children]
+      .filter(el => !el.classList.contains('arrow-btn') && !el.classList.contains('controls') && !el.classList.contains('faq-btn') && !el.classList.contains('pos-btn'));
+  }
+
+  function makeDraggable(el) {
+    el.addEventListener('pointerdown', (e) => {
+      if (!editMode) return;
+      e.preventDefault();
+      drag = { el, startX: e.clientX };
+      try { el.setPointerCapture(e.pointerId); } catch (_e) {}
+      el.classList.add('dragging');
+      document.body.classList.add('dragging-active');
+    });
+  }
+
+  function targetBefore(x) {
+    const items = reorderables().filter(el => el !== (drag && drag.el));
+    for (const el of items) {
+      const r = el.getBoundingClientRect();
+      if (x < r.left + r.width / 2) return el;
+    }
+    return document.querySelector('#bar .controls') || document.querySelector('#bar .arrow-btn');
+  }
+
+  function showDropLine(beforeEl) {
+    const line = document.getElementById('drop-line');
+    let left;
+    if (beforeEl) left = beforeEl.getBoundingClientRect().left - 3;
+    else {
+      const items = reorderables();
+      const last = items[items.length - 1];
+      left = last ? last.getBoundingClientRect().right + 1 : 6;
+    }
+    line.style.left = Math.max(2, left) + 'px';
+    line.style.display = 'block';
+  }
+
+  document.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    drag.el.style.transform = `translateX(${e.clientX - drag.startX}px)`;
+    showDropLine(targetBefore(e.clientX));
   });
 
+  document.addEventListener('pointerup', (e) => {
+    if (!drag) return;
+    const bar = document.getElementById('bar');
+    const before = targetBefore(e.clientX);
+    drag.el.style.transform = '';
+    drag.el.classList.remove('dragging');
+    document.body.classList.remove('dragging-active');
+    document.getElementById('drop-line').style.display = 'none';
+    if (before && before !== drag.el) bar.insertBefore(drag.el, before);
+    drag = null;
+    reindexTools();
+    buildToolbar();   // rebuild so the "first 3 visible when collapsed" recomputes
+    applyEnable();
+    saveOrder();
+    fitSize();
+  });
+
+  function reindexTools() {
+    const ids = [...document.getElementById('bar').children]
+      .filter(el => !el.classList.contains('arrow-btn'))
+      .map(el => el.dataset.id).filter(Boolean);
+    const byId = {}; TOOLS.forEach(t => byId[t.id] = t);
+    const next = ids.map(id => byId[id]).filter(Boolean);
+    TOOLS.forEach(t => { if (!ids.includes(t.id)) next.push(t); });
+    TOOLS.length = 0; TOOLS.push(...next);
+  }
+
+  function applySavedOrder(order) {
+    if (!order || !order.length) return;
+    const byId = {}; TOOLS.forEach(t => byId[t.id] = t);
+    const next = []; const seen = new Set();
+    for (const id of order) { if (byId[id] && !seen.has(id)) { next.push(byId[id]); seen.add(id); } }
+    TOOLS.forEach(t => { if (!seen.has(t.id)) next.push(t); });
+    TOOLS.length = 0; TOOLS.push(...next);
+  }
+
+  function saveOrder() {
+    const order = TOOLS.map(t => t.id);
+    console.log("saveOrder:", order);
+    post('save-order', { order });
+  }
+
+  // ── Languages (flag emoji) ──
+  const LANGUAGES = [
+    { code:'ru', name:'Russian',  flag:'🇷🇺' }, { code:'en', name:'English', flag:'🇬🇧' },
+    { code:'de', name:'German',   flag:'🇩🇪' }, { code:'pl', name:'Polish',  flag:'🇵🇱' },
+    { code:'ar', name:'Arabic',   flag:'🇸🇦' }, { code:'zh', name:'Chinese', flag:'🇨🇳' },
+    { code:'fr', name:'French',  flag:'🇫🇷' },
+    { code:'ja', name:'Japanese', flag:'🇯🇵' },
+    { code:'ko', name:'Korean',   flag:'🇰🇷' },
+  ];
+  let targetLang = 'ru';
+
+  // Replace the whole toolbar with language flag buttons
+  function renderLangs() {
+    const bar = document.getElementById('bar');
+    bar.innerHTML = '';
+    document.body.classList.add('lang'); // keep current window width, fill remainder
+    for (const l of LANGUAGES) {
+      const b = document.createElement('button');
+      b.className = 'tool-btn';
+      b.title = l.name;
+      b.innerHTML = `<span class="btn-icon"><span class="flag">${l.flag}</span></span><span class="btn-label">${l.name}</span>`;
+      b.onclick = () => { targetLang = l.code; runTranslate(); buildToolbar(); applyEnable(); fitSize(); };
+      bar.appendChild(b);
+    }
+    const back = document.createElement('button');
+    back.className = 'tool-btn grow';
+    back.title = 'Cancel';
+    back.innerHTML = '<span class="btn-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="1.5" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></span>';
+    back.onclick = () => { buildToolbar(); applyEnable(); fitSize(); };
+    bar.appendChild(back);
+  }
+
   function runTranslate() {
-    const btn = document.getElementById('btn-translate');
-    if (!btn || btn.disabled) return;
-    if (!btn.dataset.text) btn.dataset.text = btn.textContent;
-    btn.className = 'btn btn-processing';
-    btn.disabled = true;
-    btn.innerHTML = '<span class="loader"></span>Processing';
-    parent.postMessage({ pluginMessage: { type: 'run-translation', target: targetLang } }, '*');
+    post('notify', { text: 'Translating…' });
+    post('run-translation', { target: targetLang });
   }
 
   async function translateViaGoogle(payload, target) {
@@ -750,22 +701,54 @@
         const data = await res.json();
         results.push({ id: item.id, translatedText: data[0].map(p => p[0]).join('') });
       }
-      parent.postMessage({ pluginMessage: { type: 'apply-data', results } }, '*');
+      post('apply-data', { results });
     } catch (e) {
       console.error('Translation error:', e);
-      const btn = document.getElementById('btn-translate');
-      if (btn) {
-        btn.className = 'btn btn-error';
-        btn.innerHTML = 'Error';
-        btn.disabled = true;
-        setTimeout(() => {
-          btn.innerHTML = btn.dataset.text || 'Translate selection';
-          parent.postMessage({ pluginMessage: { type: 'request-selection' } }, '*');
-        }, 2000);
-      }
+      post('notify', { text: 'Translation error', error: true });
     }
   }
 
+  // ── Messages from plugin ──
+  window.onmessage = (e) => {
+    const msg = e.data.pluginMessage;
+    if (!msg) return;
+
+    if (msg.type === 'selection-info') {
+      selInfo = msg;
+      applyEnable();
+    }
+    if (msg.type === 'status') {
+      flash(msg.status);
+    }
+    if (msg.type === 'start-api-call') {
+      translateViaGoogle(msg.payload, msg.target);
+    }
+    if (msg.type === 'order') {
+      applySavedOrder(msg.order);
+      buildToolbar();
+      applyEnable();
+      fitSize();
+    }
+    if (msg.type === 'theme') {
+      lightTheme = !!msg.light;
+      document.body.classList.toggle('light', lightTheme);
+      buildToolbar();
+      applyEnable();
+      fitSize();
+    }
+    if (msg.type === 'pos') {
+      uiPos = msg.pos || 'center';
+      buildToolbar();
+      applyEnable();
+      fitSize();
+    }
+  };
+
+  buildToolbar();
+  applyEnable();
+  requestAnimationFrame(fitSize);
+  post('get-order');
+  post('get-theme');
 </script>
 </body>
 </html>
