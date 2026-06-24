@@ -1,128 +1,126 @@
 # Kiss Booster
 
-Figma-плагин с набором инструментов для ускорения работы дизайнера. Работа с секциями, тёмная тема, арт-задачи, перевод текстов и управление статусами — всё в одном окне.
+Figma plugin with essential tools for speeding up design workflows. Organize sections, manage dark themes, create art tasks, translate text, and control statuses — all in one compact toolbar.
 
 ![Kiss Booster UI](Screenshots.png)
 
-Интерфейс плагина сворачивается в компактный режим, чтобы не занимать место на экране.
+The plugin features a horizontal collapsible toolbar that stays out of your way until needed.
 
-## Вкладка Tools
+## Features
 
-### Wrap to new selection
+### Wrap / Fix
 
-Выбираете фреймы на канвасе и нажимаете кнопку. Плагин:
+**Smart button that works contextually:**
 
-1. Выравнивает фреймы горизонтально с отступом 80px
-2. Если в файле есть переменные с режимом "Dark" — создаёт тёмные копии каждого фрейма ниже (отступ 160px) и применяет dark mode через variable modes
-3. Оборачивает всё в Section и применяет к ней переменную `default_system_frame` как заливку
+- **With frames selected:** Wraps them into a section and aligns horizontally with 80px spacing. If dark mode variables exist, creates dark-theme copies below (with 160px spacing) and applies dark mode via variable modes
+- **With section selected:** Removes old dark copies, realigns light frames inside the section, creates fresh dark copies with correct dark mode, and resizes the section to fit content
+- **Without dark mode:** Just wraps and aligns frames without creating copies
 
-Работает и с локальными переменными, и с переменными из подключённой библиотеки дизайн-системы. Если тёмного режима нет — просто оборачивает без копий.
-
-### Fix selection
-
-Выбираете Section и нажимаете кнопку. Плагин:
-
-1. Удаляет все старые тёмные копии (фреймы с суффиксом " — Dark")
-2. Выравнивает светлые фреймы горизонтально внутри секции
-3. Создаёт свежие тёмные копии с правильным dark mode
-4. Ресайзит секцию под контент
-
-Если в файле нет dark mode — просто выравнивает фреймы и ресайзит секцию без создания тёмных копий.
-
-### Expand selection
-
-Выбираете Section и нажимаете кнопку. Плагин расширяет секцию вправо на ширину одного фрейма + отступ между фреймами. Это удобно для добавления новых экранов в существующую секцию.
-
-Если секции правее наезжают друг на друга после расширения — они каскадно сдвигаются вправо с сохранением минимального зазора 400px.
-
-Работает мгновенно, без задержки.
+Corner checkbox toggles dark-theme creation on/off.
 
 ### Align
 
-Выравнивает все секции на странице (или выбранные) в строки:
+Lays out all sections on the page (or selected ones) in rows:
 
-- 6 секций в строке, потом перенос на новую строку
-- Горизонтальный отступ между секциями — 400px
-- Вертикальный отступ между строками — высота самой высокой секции + 400px
-- Если выбраны конкретные секции — выравнивание идёт от последней выбранной (её X и Y становятся точкой отсчёта)
+- 6 sections per row, then wraps to next line
+- 400px horizontal spacing between sections
+- 400px vertical spacing between rows
+- If sections are selected, alignment starts from the last selection point (its X and Y become the reference)
 
-### Copy (Smart copy)
+### 540px
 
-Выбираете фрейм и нажимаете кнопку. Плагин:
+Wraps the selected object into a 540px-wide auto-layout frame with 16px side padding. Object stretches to fill width; height rounds to 8px grid.
 
-1. Клонирует фрейм и ставит копию правее с отступом 80px
-2. Если фрейм внутри секции — секция автоматически расширяется
-3. Секции правее каскадно сдвигаются если зазор становится меньше 400px
+### Copy ← / →
 
-Работает мгновенно, без задержки.
+**Smart directional copy:**
 
-### 1px (Make 1px gap)
+- Duplicates the selected frame left or right
+- Inside a section, shifts neighbors and the section itself
+- Standalone frame is simply copied to the side
+- Auto-expands sections if they would overlap, maintaining 400px minimum gap
 
-Оборачивает каждый выбранный объект во фрейм с отступом 1px со всех сторон. Фрейм-обёртка без заливки и обводки — только структура. Корректно работает с повёрнутыми объектами.
+### Find
 
-### Dev (Ready for dev)
+Selects every object on the page with the same name and size as the selected one.
 
-Переключает статус "Ready for development" на выбранных элементах:
+### Replace
 
-- **Есть выделение** — если все элементы уже помечены Ready for Dev, снимает статус. Иначе — ставит всем
-- **Нет выделения** — ставит/снимает Ready for Dev на всех top-level фреймах и секциях текущей страницы
+Replaces all selected objects with a copy of the reference (last-selected object), keeping each target's position and size.
 
-Работает мгновенно, без задержки.
+### 1px
 
-## Вкладка Art task
+Wraps selected objects in 1px-border frames for clean slicing/export. Handles rotated objects correctly.
 
-### Create art task
+### Art
 
-Выбираете один объект и один существующий блок ArtTask, нажимаете кнопку. Плагин:
+Fills the selected ArtTask with the target object's size (×3 for production) and draws a green arrow pointing to the object.
 
-1. Считывает размеры объекта
-2. Определяет группу размеров (160x160, 320x320 или 540x800)
-3. Масштабирует пропорционально до ближайшей группы, округляет до чётного
-4. Умножает на 3 для ретины
-5. Заполняет ArtTask блок двумя размерами: оригинальный (например `80x80px`) и для продакшена (например `480x480px`)
-6. Рисует зелёную стрелку (#30CB44, 4px) от ArtTask к объекту — стрелка идёт горизонтально-вертикально с скруглением 16px на углах, не пересекает ни ArtTask, ни объект
+### Translate
 
-Компонент ArtTask ищется на текущей странице. После первого нахождения ключ кешируется — повторные вызовы мгновенные.
+Replaces the toolbar with language flags — pick one to translate all text layers in the selection via Google Translate API.
 
-## Вкладка Translator
+Supported languages: Russian, English, German, Polish, Arabic, Chinese, French, Japanese, Korean.
 
-### Translate selection
+### Dev
 
-Выбираете слои с текстом, выбираете язык в дропдауне и нажимаете кнопку. Плагин:
+Toggles "Ready for Dev" on selected sections/frames, or on all sections if nothing is selected.
 
-1. Собирает все текстовые ноды из выделения (включая вложенные)
-2. Переводит каждый текст через Google Translate API
-3. Применяет переведённый текст обратно, сохраняя шрифты
+### Zero
 
-Поддерживаемые языки: русский, английский, немецкий, польский, арабский, китайский, испанский, французский, португальский, японский, корейский.
+Moves the single selected object to coordinates (0, 0).
 
-## Сворачиваемый интерфейс
+## UI Features
 
-Кнопка-шеврон в правом углу табов сворачивает плагин в компактный режим:
+### Horizontal Toolbar
 
-- **Tools** — сетка кнопок: Wrap, Fix, Expand / Align, Copy, 1px, Dev
-- **Art task** — статус + кнопка
-- **Translator** — выбор языка + кнопка
+Compact button grid that expands on demand:
 
-Окно плагина автоматически подстраивает высоту под активную вкладку.
+- **Collapsed:** First 3 tools + more button (arrow)
+- **Expanded:** All 11 tools visible
+- Buttons don't morph — hidden buttons use CSS display:none
 
-## Установка
+### Settings Panel
 
-1. Скачайте или клонируйте репозиторий
-2. В Figma: Plugins → Development → Import plugin from manifest → выберите `manifest.json`
+- **Position:** Choose where plugin opens (4 corners + center)
+- **Theme:** Toggle light/dark mode
+- **Reorder:** Drag buttons to customize toolbar order
+- **FAQ:** View detailed descriptions of all features
+- **Reset:** Clear all saved settings
 
-Плагин готов к работе сразу — сборка уже включена в репозиторий.
+### FAQ
 
-## Разработка
+Expandable help panel with 11 feature descriptions, icon indicators, and smooth navigation.
 
-```
+### Position Picker
+
+5 zones (4 corners + center) with visual brackets/icons. Plugin remembers your choice and opens in that position next time.
+
+### Theme Toggle
+
+Light/dark mode switcher with persistent state. Theme affects the entire plugin UI.
+
+### Button Reorder
+
+Drag-and-drop reorder mode accessible from Settings. Your custom order is saved automatically.
+
+## Installation
+
+1. Clone or download this repository
+2. In Figma: Plugins → Development → Import plugin from manifest → select `manifest.json`
+
+Plugin is ready to use immediately — build is included in the repo.
+
+## Development
+
+```bash
 npm install
-npm run build    # собрать один раз
-npm run watch    # пересобирать при изменениях
+npm run build    # build once
+npm run watch    # rebuild on changes
 ```
 
-## Требования
+## Requirements
 
 - Figma desktop
-- Для тёмной темы: коллекция переменных с режимом "Dark" (локальная или из подключённой библиотеки)
-- Для арт-задач: компонент ArtTask в файле (хотя бы один инстанс на текущей странице)
+- For dark theme: variable collection with "Dark" mode (local or from library)
+- For art tasks: ArtTask component in file (at least one instance on current page)
