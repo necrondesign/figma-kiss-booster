@@ -1351,6 +1351,10 @@ figma.ui.onmessage = async (msg: { type: string }) => {
     case "frame-540":
       await frame540();
       break;
+    case "greed-cmd":
+      // Greed button - placeholder functionality
+      sendStatus("Greed mode activated!", "success");
+      break;
     case "request-selection":
       sendSelectionInfo();
       break;
