@@ -119,94 +119,105 @@ Good luck! 🚀
 
 ---
 
-## TEMPLATE 2: Continuation Session (Single Iteration)
+## TEMPLATE 2: Continuation Session (Single Iteration) — STRICT VERSION
 
 ```markdown
-# Kiss Booster Build — ITERATION [N]
+# Kiss Booster — ITERATION [N]
 
-Continuing Figma plugin implementation from previous session.
+⚠️ STRICT RULES — FOLLOW EXACTLY
 
-## Context
-- **Repo:** /Users/stepan/vibe-coding/figma-kiss-booster
-- **Guide:** docs/BUILD-FROM-SCRATCH.md
-- **Previous:** Iterations 1 through [N-1] completed ✅
-- **Current:** ITERATION [N]
-- **Next:** ITERATION [N+1] (for next session)
+## Your ONLY Job
+Copy code from BUILD-FROM-SCRATCH.md → Paste into files → Stop
 
-## Task: Complete ONE Iteration
+## FORBIDDEN
+🚫 Do NOT skip iterations
+🚫 Do NOT jump to a different iteration
+🚫 Do NOT run npm run build
+🚫 Do NOT compile or check TypeScript errors
+🚫 Do NOT test in Figma
+🚫 Do NOT modify code from the guide
+🚫 Do NOT critique or improve code
+🚫 Do NOT ask questions
+🚫 Do NOT combine with other iterations
 
-### Step 1: Find the iteration
-- Open: `docs/BUILD-FROM-SCRATCH.md`
-- Search for: `## ITERATION [N]`
-- Read the entire section
+## REQUIRED
+✅ Complete EXACTLY ITERATION [N]
+✅ Copy code exactly from BUILD-FROM-SCRATCH.md
+✅ Paste into correct files
+✅ Report changes in format below
+✅ STOP after reporting
 
-### Step 2: Implement exactly
-- Copy all code shown in that section
-- Paste into files shown
-- Maintain exact formatting and syntax
-- No modifications whatsoever
+## How to Do It
 
-### Step 3: Report back
-- List files modified
-- Show line counts before/after
-- Confirm ITERATION [N] COMPLETE
-
-## Expected Changes for ITERATION [N]
-
-[Get this from BUILD-FROM-SCRATCH.md for iteration N]
-
-Example:
+### 1. Find Your Iteration
 ```
-Files to modify:
-- src/code.ts: Add moveToZero() function, update message handler
-- ui.html: Add Zero button to toolbar
-
-Expected lines added: ~30
+File: docs/BUILD-FROM-SCRATCH.md
+Search for: ## ITERATION [N]
 ```
 
-## Critical Rules
-❌ No npm run build
-❌ No testing in Figma
-❌ No code modifications
-❌ No combining with other iterations
-❌ No skipping steps
+### 2. Read the Section
+Look for lines like:
+```
+**File: src/code.ts**
+Add function X...
 
-✅ Copy exact code
-✅ Use correct file paths
-✅ Update message handlers
-✅ Report line counts
-✅ Stop when done
+**File: ui.html**
+Add button Y...
+```
 
-## Report Format
+### 3. Copy and Paste EXACTLY
+- Copy code between lines (no modifications)
+- Paste into correct file path
+- Keep exact indentation
+- No changes, no fixes, no improvements
 
+### 4. Repeat for All Files in This Iteration
+If iteration shows 2-3 file updates, do all of them
+
+### 5. Report Back — EXACTLY This Format
 ```
 ITERATION [N] COMPLETE ✅
 
-Files modified:
-- src/code.ts: Added function X(), updated message handler
-- ui.html: Added button Y
+Modified files:
+- src/code.ts: [description of changes]
+- src/ui.html: [description of changes]
 
-File statistics:
-- src/code.ts: ~XXX total lines (added ~YY)
-- ui.html: ~ZZZ total lines (added ~WW)
-
-Status: Ready for ITERATION [N+1]
+STOP. Do not continue to next iteration.
+Ready for ITERATION [N+1] in next session.
 ```
 
-## Reference: File Locations
-- Plugin code: `/src/code.ts` (main logic)
-- UI code: `/src/ui.html` (toolbar)
-- Build config: `manifest.json`, `package.json`, `tsconfig.json`
-- Project root: `/Users/stepan/vibe-coding/figma-kiss-booster/`
+## Example (Don't do this, just see format)
 
-## If You Get Stuck
-1. Re-read the iteration section in BUILD-FROM-SCRATCH.md
-2. Check exact file paths
-3. Look for "Update:", "Add:", "Replace:" instructions
-4. Copy code exactly including indentation
-5. If still stuck: Report what's unclear, don't guess
+```
+ITERATION 12 COMPLETE ✅
 
-Good luck with ITERATION [N]! 🚀
+Modified files:
+- src/code.ts: Added translateSelection() function, added "translate" case to message handler
+- src/ui.html: Added 🌐 button and language selector HTML
+
+STOP. Ready for ITERATION 13.
+```
+
+## If You're Confused
+DO NOT GUESS.
+DO NOT SKIP.
+DO NOT COMBINE.
+
+Re-read the iteration section in BUILD-FROM-SCRATCH.md
+Copy code exactly as shown
+Paste into files
+Report what changed
+Stop.
+
+## File Paths (Always Same)
+- `/src/code.ts` ← Plugin code
+- `/src/ui.html` ← UI code
+- Project: `/Users/stepan/vibe-coding/figma-kiss-booster/`
+
+## Your ONLY Mission
+Complete ITERATION [N]. Nothing else. Stop when done.
+
+Go. 🚀
 ```
 
 ---
