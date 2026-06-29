@@ -1039,6 +1039,327 @@ async function frame540() {
     figma.currentPage.selection = wrappers;
     sendStatus(`${wrappers.length} framed 540px`, "success");
 }
+// ─── Ported from colleague's plugin (kiss-figma-plugin) ──────────
+// ⭐ Custom — pull layers out of auto-layout (absolute) and raise to top
+async function customIgnoreAutoLayout() {
+    const selection = [...figma.currentPage.selection];
+    if (selection.length === 0) {
+        sendStatus("Select layers", "error");
+        return;
+    }
+    let count = 0;
+    for (const node of selection) {
+        const parent = node.parent;
+        if (!parent || !("insertChild" in parent))
+            continue;
+        if ("layoutPositioning" in node)
+            node.layoutPositioning = "ABSOLUTE";
+        parent.insertChild(parent.children.length, node);
+        count++;
+    }
+    sendStatus(`${count} → top (absolute)`, "success");
+}
+// 🔲 Grid — arrange selection (or a section's children) into a grid, grouped by size
+async function gridLayout() {
+    const GRID_GAP = 48, GROUP_GAP = 80, SECTION_PADDING = 100;
+    const selection = [...figma.currentPage.selection];
+    const sectionMode = selection.length === 1 && selection[0].type === "SECTION";
+    const nodes = sectionMode ? [...selection[0].children] : selection;
+    const section = sectionMode ? selection[0] : null;
+    if (nodes.length < 2) {
+        sendStatus("Select 2+ objects or a section", "error");
+        return;
+    }
+    const getPos = (n) => sectionMode ? { x: n.x, y: n.y } : { x: n.absoluteBoundingBox.x, y: n.absoluteBoundingBox.y };
+    const minH = Math.min(...nodes.map((n) => Math.round(n.height)));
+    const rowTolerance = Math.max(20, minH * 0.4);
+    nodes.sort((a, b) => {
+        const pa = getPos(a), pb = getPos(b);
+        if (Math.abs(pa.y - pb.y) > rowTolerance)
+            return pa.y - pb.y;
+        return pa.x - pb.x;
+    });
+    const groupMap = new Map();
+    for (const node of nodes) {
+        const key = `${Math.round(node.width)}x${Math.round(node.height)}`;
+        if (!groupMap.has(key))
+            groupMap.set(key, []);
+        groupMap.get(key).push(node);
+    }
+    const sortedGroups = [...groupMap.values()].sort((a, b) => Math.round(a[0].width) * Math.round(a[0].height) - Math.round(b[0].width) * Math.round(b[0].height));
+    if (sectionMode && section) {
+        let currentGroupY = SECTION_PADDING;
+        for (const group of sortedGroups) {
+            const nodeW = Math.round(group[0].width), nodeH = Math.round(group[0].height);
+            const cols = Math.ceil(Math.sqrt(group.length));
+            group.forEach((node, i) => {
+                node.x = SECTION_PADDING + (i % cols) * (nodeW + GRID_GAP);
+                node.y = currentGroupY + Math.floor(i / cols) * (nodeH + GRID_GAP);
+            });
+            const rows = Math.ceil(group.length / cols);
+            currentGroupY += rows * nodeH + (rows - 1) * GRID_GAP + GROUP_GAP;
+        }
+        let maxX = 0, maxY = 0;
+        for (const node of nodes) {
+            maxX = Math.max(maxX, node.x + node.width);
+            maxY = Math.max(maxY, node.y + node.height);
+        }
+        section.resizeWithoutConstraints(maxX + SECTION_PADDING, maxY + SECTION_PADDING);
+    }
+    else {
+        let startX = Infinity, startY = Infinity;
+        for (const node of nodes) {
+            const bb = node.absoluteBoundingBox;
+            if (!bb)
+                continue;
+            if (bb.x < startX)
+                startX = bb.x;
+            if (bb.y < startY)
+                startY = bb.y;
+        }
+        let currentGroupY = startY;
+        for (const group of sortedGroups) {
+            const nodeW = Math.round(group[0].width), nodeH = Math.round(group[0].height);
+            const cols = Math.ceil(Math.sqrt(group.length));
+            group.forEach((node, i) => {
+                const targetAbsX = startX + (i % cols) * (nodeW + GRID_GAP);
+                const targetAbsY = currentGroupY + Math.floor(i / cols) * (nodeH + GRID_GAP);
+                const bb = node.absoluteBoundingBox;
+                if (!bb)
+                    return;
+                node.x += targetAbsX - bb.x;
+                node.y += targetAbsY - bb.y;
+            });
+            const rows = Math.ceil(group.length / cols);
+            currentGroupY += rows * nodeH + (rows - 1) * GRID_GAP + GROUP_GAP;
+        }
+    }
+    sendStatus(`Grid: ${nodes.length} in ${sortedGroups.length} group(s)`, "success");
+}
+// 🔷 Component — wrap each selected object into a master component, preserving properties
+async function makeComponents() {
+    const selection = [...figma.currentPage.selection];
+    if (selection.length === 0) {
+        sendStatus("Select objects", "error");
+        return;
+    }
+    const created = [];
+    for (const node of selection) {
+        const parent = node.parent;
+        if (!parent || !("insertChild" in parent))
+            continue;
+        const insertIndex = parent.children.indexOf(node);
+        const component = figma.createComponent();
+        component.name = node.name;
+        if (node.type === "FRAME") {
+            const f = node;
+            const transform = f.relativeTransform;
+            component.resize(f.width, f.height);
+            component.opacity = f.opacity;
+            component.blendMode = f.blendMode;
+            component.clipsContent = f.clipsContent;
+            component.fills = JSON.parse(JSON.stringify(f.fills));
+            component.strokes = JSON.parse(JSON.stringify(f.strokes));
+            component.strokeWeight = f.strokeWeight;
+            component.strokeAlign = f.strokeAlign;
+            component.effects = JSON.parse(JSON.stringify(f.effects));
+            if (f.cornerRadius !== figma.mixed) {
+                component.cornerRadius = f.cornerRadius;
+            }
+            else {
+                component.topLeftRadius = f.topLeftRadius;
+                component.topRightRadius = f.topRightRadius;
+                component.bottomLeftRadius = f.bottomLeftRadius;
+                component.bottomRightRadius = f.bottomRightRadius;
+            }
+            if (f.layoutMode !== "NONE") {
+                component.layoutMode = f.layoutMode;
+                component.primaryAxisSizingMode = f.primaryAxisSizingMode;
+                component.counterAxisSizingMode = f.counterAxisSizingMode;
+                component.primaryAxisAlignItems = f.primaryAxisAlignItems;
+                component.counterAxisAlignItems = f.counterAxisAlignItems;
+                component.paddingLeft = f.paddingLeft;
+                component.paddingRight = f.paddingRight;
+                component.paddingTop = f.paddingTop;
+                component.paddingBottom = f.paddingBottom;
+                component.itemSpacing = f.itemSpacing;
+            }
+            parent.insertChild(insertIndex, component);
+            component.relativeTransform = transform;
+            for (const child of [...f.children]) {
+                component.appendChild(child);
+                if ("constraints" in child)
+                    child.constraints = { horizontal: "SCALE", vertical: "SCALE" };
+            }
+            f.remove();
+        }
+        else {
+            const bb = node.absoluteBoundingBox;
+            if (!bb)
+                continue;
+            const parentAbsX = parent.type === "PAGE" ? 0 : parent.absoluteTransform[0][2];
+            const parentAbsY = parent.type === "PAGE" ? 0 : parent.absoluteTransform[1][2];
+            component.fills = [];
+            component.clipsContent = false;
+            component.resize(Math.round(bb.width), Math.round(bb.height));
+            parent.insertChild(insertIndex, component);
+            component.x = bb.x - parentAbsX;
+            component.y = bb.y - parentAbsY;
+            component.appendChild(node);
+            const nodeBBAfter = node.absoluteBoundingBox;
+            if (nodeBBAfter) {
+                node.x -= nodeBBAfter.x - component.absoluteTransform[0][2];
+                node.y -= nodeBBAfter.y - component.absoluteTransform[1][2];
+            }
+            if ("constraints" in node)
+                node.constraints = { horizontal: "SCALE", vertical: "SCALE" };
+        }
+        created.push(component);
+    }
+    figma.currentPage.selection = created;
+    sendStatus(`${created.length} component(s) created`, "success");
+}
+// ✂️ Slice ×2.67 — rescale selection by 2.67, round to even, stack into a section
+async function scaleSelection267() {
+    const GAP = 80, SECTION_PADDING = 100, SCALE = 2.67;
+    const selection = [...figma.currentPage.selection];
+    if (selection.length === 0) {
+        sendStatus("Select objects", "error");
+        return;
+    }
+    const roundEven = (v) => Math.round(v / 2) * 2;
+    for (const node of selection) {
+        if (!("rescale" in node))
+            continue;
+        node.rescale(SCALE);
+        if ("resize" in node)
+            node.resize(roundEven(node.width), roundEven(node.height));
+    }
+    const section = figma.createSection();
+    section.name = "Slice / 2.67";
+    figma.currentPage.appendChild(section);
+    let currentY = SECTION_PADDING, maxWidth = 0;
+    for (const node of [...selection]) {
+        section.appendChild(node);
+        node.x = SECTION_PADDING;
+        node.y = currentY;
+        currentY += node.height + GAP;
+        maxWidth = Math.max(maxWidth, node.width);
+    }
+    section.resizeWithoutConstraints(maxWidth + SECTION_PADDING * 2, currentY - GAP + SECTION_PADDING);
+    figma.viewport.scrollAndZoomIntoView([section]);
+    sendStatus("Slice ×2.67 done", "success");
+}
+// ─── Custom JSON "recipe" scripts ────────────────────────────────
+function hexToRgb(hex) {
+    let h = (hex || "#000000").replace("#", "").trim();
+    if (h.length === 3)
+        h = h.split("").map((c) => c + c).join("");
+    const n = parseInt(h, 16);
+    if (isNaN(n) || h.length < 6)
+        return { r: 0, g: 0, b: 0 };
+    return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 };
+}
+function clamp01(v) {
+    return Math.max(0, Math.min(1, typeof v === "number" && !isNaN(v) ? v : 0));
+}
+function fillTemplate(s, node, i, origName) {
+    return String(s == null ? "" : s)
+        .replace(/\{w\}/g, String(Math.round(node.width)))
+        .replace(/\{h\}/g, String(Math.round(node.height)))
+        .replace(/\{i\}/g, String(i))
+        .replace(/\{name\}/g, origName);
+}
+async function applyScriptOp(node, op, i, origName) {
+    switch (op && op.op) {
+        case "move":
+            if ("x" in node) {
+                node.x += Number(op.dx) || 0;
+                node.y += Number(op.dy) || 0;
+            }
+            break;
+        case "pos":
+            if (op.x != null)
+                node.x = Number(op.x);
+            if (op.y != null)
+                node.y = Number(op.y);
+            break;
+        case "resize":
+            if ("resize" in node)
+                node.resize(op.w != null ? Number(op.w) : node.width, op.h != null ? Number(op.h) : node.height);
+            break;
+        case "opacity":
+            if ("opacity" in node)
+                node.opacity = clamp01(Number(op.value));
+            break;
+        case "rotate":
+            if ("rotation" in node)
+                node.rotation = Number(op.deg) || 0;
+            break;
+        case "corner":
+            if ("cornerRadius" in node)
+                node.cornerRadius = Number(op.value) || 0;
+            break;
+        case "visible":
+            node.visible = !!op.value;
+            break;
+        case "lock":
+            node.locked = !!op.value;
+            break;
+        case "fill":
+            if ("fills" in node)
+                node.fills = [{ type: "SOLID", color: hexToRgb(op.color), opacity: op.opacity != null ? clamp01(Number(op.opacity)) : 1 }];
+            break;
+        case "stroke":
+            if ("strokes" in node) {
+                node.strokes = [{ type: "SOLID", color: hexToRgb(op.color) }];
+                if (op.weight != null && "strokeWeight" in node)
+                    node.strokeWeight = Number(op.weight);
+            }
+            break;
+        case "rename":
+            node.name = fillTemplate(op.name, node, i, origName);
+            break;
+        case "text":
+            if (node.type === "TEXT") {
+                const f = node.fontName;
+                if (f !== figma.mixed) {
+                    await figma.loadFontAsync(f);
+                    node.characters = String(op.value == null ? "" : op.value);
+                }
+            }
+            break;
+    }
+}
+async function runScript(script) {
+    const sel = [...figma.currentPage.selection];
+    if (sel.length === 0) {
+        sendStatus("Select objects", "error");
+        return;
+    }
+    const ops = script && Array.isArray(script.ops) ? script.ops : null;
+    if (!ops || ops.length === 0) {
+        sendStatus("Script has no ops", "error");
+        return;
+    }
+    let i = 0;
+    for (const node of sel) {
+        i++;
+        const origName = node.name;
+        for (const op of ops) {
+            try {
+                await applyScriptOp(node, op, i, origName);
+            }
+            catch (_e) { }
+        }
+    }
+    sendStatus(`Ran ${ops.length} ops on ${sel.length}`, "success");
+}
+// ─── Custom user buttons: JSON "Code" scripts ────────────────────
+async function runCustomFn(fn, script) {
+    if (fn === "__script")
+        await runScript(script);
+}
 // ─── UI Setup ────────────────────────────────────────────────────
 figma.showUI(__html__, { width: 250, height: 62, themeColors: true });
 // ─── Window positioning ──────────────────────────────────────────
@@ -1190,9 +1511,36 @@ figma.ui.onmessage = async (msg) => {
         case "frame-540":
             await frame540();
             break;
-        case "greed-cmd":
-            // Greed button - placeholder functionality
-            sendStatus("Greed mode activated!", "success");
+        case "grid-layout":
+            await gridLayout();
+            break;
+        case "make-component":
+            await makeComponents();
+            break;
+        case "custom-absolute":
+            await customIgnoreAutoLayout();
+            break;
+        case "slice-267":
+            await scaleSelection267();
+            break;
+        case "custom-fn":
+            await runCustomFn(msg.fn, msg.script);
+            break;
+        case "get-custom": {
+            const custom = (await figma.clientStorage.getAsync("customTools")) || null;
+            figma.ui.postMessage({ type: "custom", custom });
+            break;
+        }
+        case "save-custom":
+            await figma.clientStorage.setAsync("customTools", msg.custom);
+            break;
+        case "get-removed": {
+            const removed = (await figma.clientStorage.getAsync("removedTools")) || null;
+            figma.ui.postMessage({ type: "removed", removed });
+            break;
+        }
+        case "save-removed":
+            await figma.clientStorage.setAsync("removedTools", msg.removed);
             break;
         case "request-selection":
             sendSelectionInfo();
@@ -1218,14 +1566,28 @@ figma.ui.onmessage = async (msg) => {
         case "save-theme":
             await figma.clientStorage.setAsync("lightTheme", msg.light);
             break;
+        case "get-wf": {
+            const wf = await figma.clientStorage.getAsync("wfTheme");
+            figma.ui.postMessage({ type: "wf", on: wf == null ? true : wf });
+            break;
+        }
+        case "save-wf":
+            await figma.clientStorage.setAsync("wfTheme", msg.on);
+            break;
         case "reset-all":
             await figma.clientStorage.deleteAsync("uiPos");
             await figma.clientStorage.deleteAsync("lightTheme");
             await figma.clientStorage.deleteAsync("toolOrder");
+            await figma.clientStorage.deleteAsync("customTools");
+            await figma.clientStorage.deleteAsync("removedTools");
+            await figma.clientStorage.deleteAsync("wfTheme");
             uiPos = "center";
             figma.ui.postMessage({ type: "pos", pos: uiPos });
             figma.ui.postMessage({ type: "theme", light: false });
             figma.ui.postMessage({ type: "order", order: null });
+            figma.ui.postMessage({ type: "custom", custom: null });
+            figma.ui.postMessage({ type: "removed", removed: null });
+            figma.ui.postMessage({ type: "wf", on: true });
             repositionUI(uiPos);
             figma.notify("Settings reset to default");
             break;
@@ -1234,12 +1596,20 @@ figma.ui.onmessage = async (msg) => {
             await figma.clientStorage.setAsync("uiPos", uiPos);
             repositionUI(uiPos);
             break;
-        case "resize":
-            lastW = msg.width || 320;
-            lastH = msg.height;
+        case "resize": {
+            // Only update a dimension when it's actually provided; keep the other as-is.
+            // (Panels like Settings post width only — never let height become undefined.)
+            const w = msg.width, h = msg.height;
+            if (w != null && w > 0)
+                lastW = Math.round(w);
+            if (h != null && h > 0)
+                lastH = Math.round(h);
+            lastW = Math.max(lastW || 1, 1);
+            lastH = Math.max(lastH || 1, 1);
             figma.ui.resize(lastW, lastH);
             repositionUI(uiPos);
             break;
+        }
         case "run-translation": {
             const textNodes = findAllTextNodes(figma.currentPage.selection);
             if (textNodes.length === 0) {

@@ -1,597 +1,179 @@
-# Kiss Booster Figma Plugin — Complete Architecture
+# Kiss Booster — Architecture & Logic (agent guide)
 
-## Project Overview
-
-**Kiss Booster** is a Figma plugin that accelerates design workflows with tools for section management, dark theme creation, art task automation, text translation, and dev status tracking. The plugin features a horizontal collapsible toolbar with persistent settings (position, theme, button order).
-
-### Key Stats
-- **Language:** TypeScript + vanilla JavaScript/HTML
-- **Build:** TSC (TypeScript Compiler)
-- **Entry Point:** `src/code.ts` (plugin logic) + `ui.html` (UI/iframe)
-- **Build Output:** `dist/src/code.js` + `ui.html` (referenced in manifest)
-- **Plugin API:** Figma Plugin API v1.0.0
+Authoritative reference for the **Kiss Booster** Figma plugin. Read this before changing
+`src/code.ts` or `ui.html`. Reflects the current state of the code.
 
 ---
 
-## File Structure
+## 1. Build & workflow
 
-```
-figma-kiss-booster/
-├── src/
-│   └── code.ts              # Main plugin logic (1500+ lines)
-├── ui.html                  # Plugin UI iframe (800+ lines)
-├── dist/
-│   └── src/
-│       └── code.js          # Compiled plugin code (generated)
-├── manifest.json            # Plugin metadata & entry points
-├── package.json             # Dependencies & build scripts
-├── tsconfig.json            # TypeScript configuration
-├── README.md                # User documentation (English)
-└── CLAUDE.md                # This file
-```
-
----
-
-## Core Architecture
-
-### Two-Process Model
-
-The plugin runs in two separate contexts:
-
-1. **Plugin Context** (`src/code.ts` → `dist/src/code.js`)
-   - Runs in Figma's sandbox
-   - Access to Figma API (document, selection, libraries)
-   - Handles all design operations
-   - Cannot access DOM or external APIs
-   - Communicates with UI via postMessage
-
-2. **UI Context** (`ui.html`)
-   - Runs in iframe inside Figma
-   - HTML/CSS/JavaScript for the toolbar
-   - Cannot access Figma API
-   - Communicates with plugin via postMessage
-
-**Communication Flow:**
-```
-User clicks button → UI postMessage('cmd-name') → Plugin executes → 
-Plugin postMessage('resize'/'status'/etc) → UI responds
-```
+- **Two source files only:**
+  - `src/code.ts` — plugin sandbox (the "main thread"). Compiled by `tsc`.
+  - `ui.html` — the UI iframe. **Not compiled** — `manifest.json` references it directly.
+- **Build:** `npm run build` (= `tsc`, target ES2017, strict) → `dist/src/code.js`.
+  - After editing **code.ts** → run `npm run build`.
+  - After editing **ui.html** → **no build**; verify the script block with
+    `node --check` (extract `/<script>([\s\S]*?)<\/script>/`). It is plain browser JS.
+- **manifest.json:** `main: dist/src/code.js`, `ui: ui.html`, `networkAccess` allows
+  `translate.googleapis.com` (used by the translator).
+- **Verifying:** the user (Stepan) checks in Figma himself. **Do NOT use browser-preview
+  tools** unless asked. For UI logic you can simulate `ui.html`'s script in Node with a
+  mock `document`/`parent` (see how prior sessions tested `composeTools`/pet logic).
+- **Commits:** never add an AI co-author — author is Stepan only.
 
 ---
 
-## Plugin Code (`src/code.ts`)
+## 2. Two-context architecture (critical)
 
-### Top-Level Structure
+| | `src/code.ts` (sandbox) | `ui.html` (iframe) |
+|---|---|---|
+| Has | `figma` API, clientStorage | DOM, `fetch`, `eval` |
+| Lacks | DOM, `eval`, `Function`, `fetch` to most hosts | the `figma` API |
+| Role | mutate the document, persist state | render toolbar/panels, user input |
 
-#### Constants (lines 1-6)
-```typescript
-const H_GAP = 80;           // Horizontal spacing between frames
-const V_GAP = 160;          // Vertical spacing for dark copies
-const SECTION_PADDING = 100; // Section auto-layout padding
-```
+They communicate **only** via messages:
+- UI → plugin: `parent.postMessage({ pluginMessage: { type, ... } }, '*')` (UI helper `post(type, extra)`).
+- plugin → UI: `figma.ui.postMessage({ type, ... })`, received in `window.onmessage`.
 
-#### Key Functions by Category
-
-### 1. Helper Functions
-
-**`sendStatus(text, status)`**
-- Posts status message to UI for flash feedback
-- Shows Figma toast notification
-- Used for success/error feedback after operations
-
-**`findDarkMode()` → Promise<{collection, modeId} | null>**
-- Searches for "Dark" mode in local variable collections
-- If not found, scans library variables in selected nodes
-- Essential for wrap/fix operations that create dark copies
-- Returns null if no dark mode exists (operations still work without it)
-
-**`findVariable(name)` → Promise<Variable | null>**
-- Fuzzy searches local variables first (exact match → ends with → partial)
-- Falls back to library variable search
-- Used to find `default_system_frame` variable for section fills
-- Shows warning if not found but doesn't block operations
-
-**`getSelectedFrames()`**
-- Filters selection to only Frame nodes
-- Used by wrap/align/expand operations
-
-**`getSelectedSections()`**
-- Filters selection to only Section nodes
-- Used by fix/expand operations
-
-### 2. Frame Layout Operations
-
-**`alignSectionsInGrid(sections, startX, startY)`**
-- Arranges sections in rows: 6 per row, then wraps
-- 400px horizontal gap, variable vertical gap (height + 400px)
-- Called by alignSections() and wrap operations
-
-**`expandSectionGrow(direction, duplicate?)`**
-- Expands selected frame/section horizontally (left/right)
-- Shift siblings in same row to avoid overlap (Y-bounds aware)
-- If `duplicate=true`: creates a copy instead of expanding
-- Uses H_GAP = 80px for spacing
-
-**`replaceWithInstance()`**
-- Replaces all selected objects with copies of `lastAddedId`
-- Keeps each target's position and size
-- Tracks lastAddedId via selectionChange listener
-
-**`findSimilar()`**
-- Selects all objects matching selected object's name + size
-- Useful for batch operations on repeated components
-
-### 3. Wrap & Fix Operations
-
-**`wrapFrames(withDark = true)`**
-- Takes selected frames, wraps into section
-- Aligns frames horizontally (80px spacing)
-- Optionally creates dark copies (160px below)
-- Applies `default_system_frame` variable as section fill
-- Returns section id for later selection
-
-**`fixSection(withDark = true)`**
-- Takes selected section
-- Removes all old dark copies (suffix " — Dark")
-- Realigns light frames inside
-- Optionally creates fresh dark copies with correct mode
-- Resizes section to content
-
-**Dark Theme Creation Flow:**
-1. Find dark mode via `findDarkMode()`
-2. Clone each frame
-3. Rename clone: `frameName — Dark`
-4. Move down by V_GAP (160px)
-5. Apply dark mode via `setVariableModeAsync()`
-
-### 4. Frame Decoration & Utilities
-
-**`applyFrameBorder(frame, borderSize)`**
-- Wraps object in frame with `borderSize` (typically 1px)
-- Useful for export prep
-
-**`createArtArrow(artTask, target)`**
-- Draws green arrow from ArtTask block to target
-- Arrow: horizontal → vertical with 16px corner radius
-- Color: #30CB44, stroke: 4px
-
-**`createArtTask(source, targetSize)`**
-- Fills ArtTask with source's size (original) and ×3 (production)
-- Calls `createArtArrow()` to draw pointer
-
-### 5. Translation
-
-**`runTranslate()`**
-- Posts message to UI: `'run-translation'` with target language code
-- UI calls Google Translate API for text arrays
-- Plugin receives `'apply-data'` message with translations
-- Applies translations to all text layers in selection
-
-### 6. Selection & Status Tracking
-
-**Selection Change Listener** (lines ~1200+)
-```typescript
-figma.on('selectionchange', () => {
-  const info = {
-    count: selection.length,
-    hasSection: selection.some(n => n.type === 'SECTION'),
-    hasFrames: selection.some(n => n.type === 'FRAME'),
-    allDark: selection.every(n => n.name.includes(' — Dark')),
-    hasAny: selection.length > 0,
-    textCount: countTextLayers(selection)
-  };
-  ui.postMessage({ type: 'selection-info', ...info });
-});
-```
-- Sent on every selection change
-- Used by UI to enable/disable buttons
-
-**`lastAddedId` Tracking**
-- Global variable that stores the last created frame/section
-- Updated via selectionChange listener
-- Used by Replace operation
-
-### 7. Window Positioning
-
-**`repositionUI(pos)`**
-- Calculates window position based on Figma viewport + zoom
-- Positions: 'tl' (top-left), 'tr', 'bl', 'br', 'center'
-- Margin calculation: `m = 16 / zoom` (scales with zoom)
-- Bottom positions: `y = viewport.bottom - windowHeight - m * 3.5` (prevents clipping)
-- Clamped to viewport bounds
-
-**Startup Positioning** (lines ~1300)
-```typescript
-(async () => {
-  const pos = await figma.clientStorage.getAsync('uiPos');
-  if (pos) repositionUI(pos);
-})();
-```
-
-### 8. Message Handlers
-
-**UI → Plugin Messages** (window.onmessage):
-
-| Message | Payload | Action |
-|---------|---------|--------|
-| `'wrap-selection'` | - | Call wrapFrames(true) |
-| `'wrap-selection-light'` | - | Call wrapFrames(false) |
-| `'fix-selection'` | - | Call fixSection(true) |
-| `'fix-selection-light'` | - | Call fixSection(false) |
-| `'align-sections'` | - | Call alignSections() |
-| `'expand-section'` | - | Call expandSectionGrow('right') |
-| `'expand-section-left'` | - | Call expandSectionGrow('left') |
-| `'frame-540'` | - | Wrap in 540px frame |
-| `'find-similar'` | - | Call findSimilar() |
-| `'replace-instance'` | - | Call replaceWithInstance() |
-| `'frame-border'` | - | Wrap in 1px border |
-| `'create-art-block'` | - | Call createArtTask() |
-| `'toggle-dev-status'` | - | Toggle "Ready for Dev" |
-| `'move-to-zero'` | - | Move to (0,0) |
-| `'set-pos'` | {pos: string} | repositionUI(pos) + save |
-| `'save-theme'` | {light: bool} | Save to clientStorage |
-| `'get-theme'` | - | Load from clientStorage |
-| `'save-order'` | {order: string[]} | Save button order |
-| `'get-order'` | - | Load button order |
-| `'reset-all'` | - | Clear all clientStorage |
-| `'resize'` | {width?, height?} | figma.ui.resize() |
-| `'notify'` | {text, error?} | figma.notify() |
+**Consequence:** you cannot run arbitrary user JS in the plugin (no `eval`). The "Code"
+custom button therefore uses a **JSON recipe** interpreted by a whitelist (see §6).
 
 ---
 
-## UI Code (`ui.html`)
+## 3. Message protocol
 
-### Structure
+**UI → plugin** (handled in `figma.ui.onmessage` switch in code.ts):
+- Tools: `wrap-selection` / `wrap-selection-light`, `fix-selection` / `fix-selection-light`,
+  `align-sections`, `frame-540`, `expand-section` / `expand-section-left`, `find-similar`,
+  `replace-instance`, `frame-border`, `create-art-block`, `toggle-dev-status`, `move-to-zero`,
+  `dark-theme-copy`, `calc-size`, `smart-copy`.
+- Ported (colleague): `grid-layout`, `make-component`, `custom-absolute`, `slice-267`.
+- Custom buttons: `custom-fn` `{fn, script}` (only `fn:"__script"` is used now → runs the recipe).
+- Translation: `run-translation` `{target}` → plugin replies `start-api-call`; UI fetches Google
+  Translate, sends back `apply-data` `{results}`.
+- State get/save: `get-order`/`save-order`, `get-theme`/`save-theme`, `get-custom`/`save-custom`,
+  `get-removed`/`save-removed`, `get-wf`/`save-wf`, `set-pos`, `reset-all`.
+- Window: `resize` `{width,height}` (robust: missing dim keeps previous, clamps ≥1), `notify`, `request-selection`.
 
-#### Top: Styles (lines 1-181)
-
-**CSS Variables for Theming**
-```css
-:root {
-  --bg:#2c2c2c; --btn:#383838; --btn-hover:#444;
-  --txt:#fff; --icon:rgba(255,255,255,.85);
-  --label:rgba(255,255,255,.5);
-}
-body.light {
-  --bg:#ffffff; --btn:#ebebeb; --btn-hover:#dedede;
-  --txt:#1e1e1e; --icon:rgba(0,0,0,.8);
-  --label:rgba(0,0,0,.55);
-}
-```
-
-**Key Classes**
-- `.tool-btn` — 64×50px button (flex layout: icon + label)
-- `.tool-btn.extra` — Hidden when collapsed (display:none)
-- `.tool-btn.primary` — Blue highlight for Wrap button
-- `.tool-group` — Stacked pair (expand left/right, 23×50px)
-- `.arrow-btn` — Show more chevron (right side, rotates 180° when open)
-
-**Panels (display:none by default)**
-- `.settings` — Settings/position/theme/reorder/FAQ/reset
-- `.faq` — Help panel with features list
-- `.lang` — Language selector (translation mode)
-
-### JavaScript Functions
-
-#### Icon Definition (lines 189-213)
-```typescript
-const IC = {
-  frame, grid, contrast, chevronL, chevronR, align, width, copy, swap,
-  scissors, search, image, translate, code, target, gear, sun, moon, help, check, sliders
-}
-```
-- SVG icons defined as constant strings
-- Used in button HTML and panels
-- Support currentColor inheritance for theming
-
-#### Tool Definitions (lines 228-244)
-```typescript
-const TOOLS = [
-  { id:'wrap', wrapfix:true, icon, label, rule, primary:true },
-  { id:'align', icon, label, cmd, rule },
-  // ... 11 total tools (Wrap, Align, 540px, Expand, Find, Replace, 1px, Art, Translate, Dev, Zero)
-  { id:'settings', settingsBtn:true },
-]
-```
-
-#### Enable Rules (lines 216-225)
-```typescript
-const RULES = {
-  wrap: s => s.hasFrames && !s.hasSection && !s.allDark && s.count > 0,
-  wrapfix: s => s.hasSection || (s.hasFrames && !s.allDark && s.count > 0),
-  section: s => s.hasSection,
-  one: s => s.count === 1,
-  any: s => s.hasAny,
-  two: s => s.count >= 2,
-  text: s => (s.textCount || 0) > 0,
-  always: s => true,
-}
-```
-- Determines button enable/disable based on selection
-
-### Core Functions
-
-**`post(type, extra)`** — Message to plugin
-```typescript
-function post(type, extra) {
-  parent.postMessage({ pluginMessage: Object.assign({ type }, extra || {}) }, '*');
-}
-```
-
-**`fitSize()`** — Auto-size window to toolbar
-```typescript
-function fitSize() {
-  const bar = document.getElementById('bar');
-  const r = bar.getBoundingClientRect();
-  post('resize', { width: Math.ceil(r.width) + 1, height: Math.ceil(r.height) });
-}
-```
-
-**`buildToolbar()`** — Render all buttons
-- Loop through TOOLS array
-- Create buttons based on tool type
-- Apply enable/disable rules
-- Add draggable listeners for reorder mode
-- Append arrow button for collapse/expand
-
-**`openSettings()`** — Show settings panel
-- Position picker (5 zones: TL, TR, BL, BR, Center)
-- Theme toggle (sun/moon icons)
-- Reorder button (drag mode)
-- FAQ link
-- Reset dialog opener
-- Fixed width: 560px
-- Back button closes and rebuilds toolbar
-
-**`openFaq()`** — Show help panel
-- 11 feature items with icons (left column)
-- Click item → show description (right column)
-- Back arrow closes panel
-- Fixed dimensions: 560×420px
-
-**`openResetDialog()`** — Confirmation dialog
-- Centered text: "Reset all settings?"
-- Yes/No buttons
-- Yes clears all clientStorage values
-
-**`renderLangs()`** — Show language selector
-- Replaces toolbar with language flag buttons
-- 9 languages: Russian, English, German, Polish, Arabic, Chinese, French, Japanese, Korean
-- Click language → `runTranslate()`
-- Fixed width: 560px
-
-**`toggleTheme()`** — Light/dark mode
-- Toggles `body.light` class
-- Rebuilds toolbar (sun ↔ moon icon)
-- Saves to clientStorage
-- Calls fitSize()
-
-**`toggleEdit(gearBtn)`** — Reorder mode
-- Toggles `body.edit` class
-- Shows wiggle animation on draggable buttons
-- Changes gear button to checkmark
-- Drag listeners activate
-- Save button (checkmark) exits edit mode
-
-**`applySavedOrder(order)`** — Reorder TOOLS array
-```typescript
-// If saved order: [id1, id2, id3...]
-// Move those to front, append unsaved tools to end
-```
-
-### Drag & Reorder
-
-**`makeDraggable(el)`**
-- Adds pointerdown listener
-- Only active in edit mode
-- Captures pointer, adds `.dragging` class
-- Tracks startX for delta calculation
-
-**Document Listeners:**
-- `pointermove` — Updates drag position, shows drop line
-- `pointerup` — Inserts element before target, rebuilds toolbar, saves order
-
-**`reorderables()`** — Filter reorderable buttons
-- Excludes: arrow-btn, settings-btn (in normal mode), FAQ, position buttons
-
-### State & Persistence
-
-**Local Variables:**
-- `selInfo` — Current selection state (count, hasFrames, hasSection, etc.)
-- `lightTheme` — Boolean (default: false)
-- `editMode` — Boolean (default: false)
-- `wfTheme` — Wrap/Fix checkbox state (dark theme copies, default: true)
-- `uiPos` — Position: 'tl'|'tr'|'bl'|'br'|'center' (default: 'center')
-- `drag` — Active drag state (element, startX)
-- `lastBtn` — Last clicked button (for flash feedback)
-- `targetLang` — Translation target language code
-
-**ClientStorage Keys** (persisted across sessions):
-- `'theme'` — boolean (light mode)
-- `'uiPos'` — string (position)
-- `'order'` — string[] (button order)
-
-**Message Handlers from Plugin** (window.onmessage):
-- `'selection-info'` → Update selInfo, applyEnable()
-- `'status'` → flash(status) + button highlight
-- `'start-api-call'` → translateViaGoogle()
-- `'order'` → applySavedOrder(), buildToolbar()
-- `'theme'` → toggleTheme() updates
-- `'pos'` → Update uiPos
-
-### Translation
-
-**`translateViaGoogle(payload, target)`**
-- Calls Google Translate API via CORS endpoint: `https://translate.googleapis.com/translate_a/single?...`
-- Takes array of {id, text} items
-- Posts back to plugin: `{ type: 'apply-data', results: [{id, translatedText}, ...] }`
+**plugin → UI** (`window.onmessage`): `status` (button flash), `selection-info`
+(`{count,hasSection,hasFrames,allDark,hasAny,textCount}` → drives enable rules),
+`order`, `theme`, `custom`, `removed`, `wf`, `pos`, `start-api-call`.
 
 ---
 
-## Manifest (`manifest.json`)
+## 4. `ui.html` — toolbar & UI logic
 
-```json
-{
-  "id": "kiss-booster-plugin",
-  "name": "Kiss booster",
-  "api": "1.0.0",
-  "main": "dist/src/code.js",
-  "ui": "ui.html",
-  "editorType": ["figma"],
-  "networkAccess": {
-    "allowedDomains": ["https://translate.googleapis.com"],
-    "reasoning": "Uses Google Translate API for text translation."
-  }
-}
-```
+### Tool model
+- `TOOLS` (const) = built-in tool defs: `wrap`(primary, with dark-theme checkbox), `align`,
+  `540`, `expand`(group of two chevron minis), `find`, `replace`, `1px`, `x267`(2.67×),
+  `art`, `translate`(`__translate`→language picker), `dev`, `zero`, `component`, `custom`,
+  `greed`(label **"Grid"**, cmd `grid-layout`), and `settings`(`settingsBtn`).
+- `composeTools()` returns the render list: **Clawd pet (id `claude`) first** →
+  built-ins + custom tools (ordered by `savedOrder`) → `settings` last.
+- State (module-level lets, persisted in clientStorage):
+  - `customTools` — `[{id, name, icon, fn:'__script', script}]` (user "Code" buttons).
+  - `removedIds` — hidden built-in ids; **seeded with `DEFAULT_HIDDEN = ['component','custom','greed']`**
+    so Comp/Custom/Grid are hidden by default and live in the Functions add-list. Reset re-seeds it.
+  - `savedOrder` — persisted tool order (settings & pet excluded).
+- `buildToolbar()` iterates `composeTools()`, skips `removedIds`, renders each tool;
+  `applyEnable()` toggles `disabled` per `RULES[dataset.rule]` against `selInfo`.
 
-- `main` — Plugin entry point (compiled TypeScript)
-- `ui` — Iframe entry point (HTML)
-- `networkAccess` — Google Translate endpoint for translation feature
+### Collapse / expand
+- `body.open` toggled by the ▸ arrow. Collapsed shows the first 3 reorderable tools (`shown<3`)
+  + arrow; expanded shows all. Width is dynamic via `fitSize()`.
 
----
+### Reorder (edit) mode
+- `toggleEdit()` → `body.edit`; tools wiggle, become drag-handles (`makeDraggable` + pointer
+  events + `#drop-line`). Each shows a **✕ delete badge** (`addDeleteX`→`deleteTool`):
+  deleting a built-in adds it to `removedIds`; deleting a custom removes it from `customTools`.
+  The gear becomes a ✓ to save+exit. Pet is excluded from reorder (not draggable).
 
-## Build & Deployment
+### Panels (replace `#bar`; each "back" returns to **Settings**)
+- **Settings** (`openSettings`): position picker (5 zones) + `Functions` · `Theme` · `Reorder` ·
+  `FAQ` · `Reset` + Back(✕). Width hugs content.
+- **Functions** (`openCreate`, title "Functions"): top = **"Add back removed"** chips (re-add hidden
+  built-ins) ; **"Code (JSON)"** button → reveals **Name + Script(JSON)** fields. Select a chip OR
+  fill Code, then **"Add function"** (footer). Code buttons get `icon:'code'`, `fn:'__script'`.
+  `sizePanel()` fits the window to content (consistent 16px padding).
+- **FAQ** (`openFaq`): header + scrollable list (scrollbars hidden) + description.
+- **Reset dialog** (`openResetDialog`): compact prompt + Yes/No.
+- **Translate** (`renderLangs`): replaces toolbar with 9 language flags + Cancel.
 
-### Build Process
+### Window sizing
+- `fitSize()` measures `#bar` and posts `resize {width, height}` (skips if bar hidden).
+- Panels post their own size (FAQ 560×420 fixed; Settings/Reset/Functions hug content).
+- code.ts `resize` handler keeps the previous dimension when one is omitted (never `undefined`).
 
-```bash
-npm install              # Install dependencies
-npm run build            # Run TypeScript compiler (tsc)
-npm run watch            # Recompile on file changes
-```
+### Persistence keys (clientStorage)
+`uiPos`, `lightTheme`, `toolOrder`, `customTools`, `removedTools`, `wfTheme`, `artTaskKey`.
+**Reset** (`reset-all`) deletes the first six and posts defaults back to the UI
+(`removed` → re-seeds DEFAULT_HIDDEN; `wf` → true).
 
-**What happens:**
-1. TypeScript compiler reads `src/code.ts`
-2. Outputs to `dist/src/code.js` (ES2019 compatible)
-3. `ui.html` is referenced as-is in manifest
-4. No bundling — raw JS output
-
-### Installation
-
-1. Clone repo
-2. Figma → Plugins → Development → Import plugin from manifest
-3. Select `manifest.json`
-4. Plugin appears in plugins menu
-
----
-
-## Key Design Patterns
-
-### 1. Flex-based Toolbar
-- `#bar` uses `display:flex; gap:4px; width:max-content`
-- Buttons are 64×50px (or smaller for pairs)
-- Arrow button triggers `body.open` class toggle
-- Extra buttons hidden via `body:not(.open) .tool-btn.extra { display:none }`
-
-### 2. Panels & Modes
-- Only one active: toolbar (default) OR settings OR FAQ OR languages
-- Toggled via body classes: `body.settings`, `body.faq`, `body.lang`
-- Back buttons rebuild toolbar and reset classes
-
-### 3. Selection-Driven UI
-- Every selection change posts `selection-info` to UI
-- UI enables/disables buttons based on RULES + selInfo
-- Button clicks are disabled if `button.disabled` is true
-
-### 4. Message-Passing Protocol
-- Simple string type + optional payload object
-- No request/response system (one-way messages)
-- Status feedback via flash colors (blue success, red error)
-
-### 5. Theme System
-- CSS custom properties (variables) in :root
-- `body.light` class overrides all colors
-- No hardcoded colors in JS (except icons stroke=#fff)
-- Theme persisted in clientStorage
-
-### 6. Window Positioning
-- Calculates position on startup from clientStorage
-- Adjusts for zoom: `margin = 16px / zoom`
-- Bottom margin extra (×3.5) to prevent screen clipping
-- Fixed width: 560px for all panels (Settings, Languages, FAQ)
+### Clawd pet (the crab) 🦀
+- First toolbar block; not draggable; deletable via ✕ (→ appears in Functions add-list as "Clawd").
+- 14 animation **`<template>`s** in `ui.html` (authentic Clawd SVGs, CSS keyframes inside;
+  viewBox normalized to `-8 -11 31 30`). Shown one at a time via `clawdShow(tplId)`.
+- Registries + triggers:
+  - `CLAWD_IDLE` (idle-living/sleeping/wake) — random rotation every ~9–14s (`petIdleLoop`).
+  - `CLAWD_REACT` (working-typing/building/builder/wizard) — random on **any tool click** (`petReact`, hooked in `onTool`/`onWrapFix`).
+  - `CLAWD_PET` (eureka/notification/dizzy) — random on **tapping the crab** (`petPlay`).
+  - `CLAWD_EXPAND` = crab-walking (marches right, ×2 fast, ~1s) on **expand**; `CLAWD_COLLAPSE` = going-away on **collapse** (`petGesture`).
+  - `CLAWD_SETTINGS` = working-overheated, shown on **return from Settings** (panel hides the crab while open).
+- **Licensing:** animations adapted from `github.com/marciogranzotto/clawd-tank` (MIT). See
+  `THIRD_PARTY_NOTICES.md`. "Clawd" is Anthropic's mascot — MIT doesn't grant brand rights;
+  not affiliated with Anthropic. Keep the credit comment in `ui.html` `<head>`.
 
 ---
 
-## Common Tasks for Agents
+## 5. `src/code.ts` — features (each operates on the current selection)
 
-### Adding a New Tool
-
-1. Define tool in TOOLS array (ui.html):
-   ```typescript
-   { id: 'mytool', icon: IC.mytool, label: 'My Tool', cmd: 'my-tool-cmd', rule: 'any' }
-   ```
-
-2. Add icon to IC object (ui.html):
-   ```typescript
-   mytool: S('<path d="M..."/>'),
-   ```
-
-3. Add message handler in plugin (src/code.ts):
-   ```typescript
-   if (msg.type === 'my-tool-cmd') {
-     // Implementation
-     sendStatus('Done!', 'success');
-   }
-   ```
-
-4. Add enable rule if needed (ui.html RULES):
-   ```typescript
-   mytool: s => s.hasFrames && s.count > 1,
-   ```
-
-### Changing UI Layout
-
-- Edit `.tool-btn` / `.tool-group` / panel CSS classes
-- Adjust dimensions in CSS (width, height, padding, gap)
-- Update icon size via SVG viewBox or .btn-icon styling
-- Test with buildToolbar() rendering
-
-### Fixing Button Order Issues
-
-- Check applySavedOrder() logic in ui.html
-- Ensure order array matches TOOLS ids
-- Rebuild toolbar after order change
-- Check clientStorage key name: 'order'
-
-### Debugging Selection Issues
-
-- selInfo updates via selection-info message
-- Check console for selInfo object (counts, flags)
-- RULES determine enable/disable
-- Modify RULES if button should be enabled differently
+- `wrapToNewSelection(withDark)` — Wrap: align selected frames into a Section (+ dark copies if a
+  Dark variable mode exists); `fixSelection(withDark)` — re-align an existing Section.
+- `darkThemeCopy()` — dark-mode clones; `findDarkMode()` finds a "Dark" variable mode.
+- `alignSections()` — lay sections in a row. `frame540()` — wrap in 540px auto-layout.
+- `expandSectionGrow(dir)` — duplicate a frame / grow a section (row-aware).
+- `replaceWithInstance()` — replace selection with a copy of the reference (last-added). `lastAddedId`
+  tracked in `trackLastAdded` on `selectionchange`.
+- `findSimilar()` — select same-name/size nodes. `frameWithBorder()` — 1px slicing frame.
+- `createArtBlock()` / `calculateSize()` — ArtTask sizing (×3) + green arrow; `findArtTaskComponent`.
+- `toggleDevStatus()` — Ready-for-Dev. move-to-zero — `(0,0)`.
+- **Ported from colleague** (`github.com/vadimdesign-hub/kiss-figma-plugin`, MIT-style):
+  `gridLayout()`, `makeComponents()`, `customIgnoreAutoLayout()`, `scaleSelection267()` (slice ×2.67).
+- Translator: `run-translation` collects TEXT nodes → UI fetches Google Translate → `apply-data`
+  loads fonts and writes translations.
+- `sendStatus(text,status)` — notify + flash the clicked toolbar button.
 
 ---
 
-## Performance Notes
+## 6. Custom "Code" buttons — JSON recipe (no eval)
 
-- No external dependencies (vanilla JS/HTML)
-- Lightweight: ~100KB compiled plugin code
-- Lazy-load dark mode search (searches on demand, not startup)
-- Variable search cached per file (deep clone to avoid mutations)
-- Selection listener fires on every change (fast filtering)
-- Window resize is synchronous (not debounced)
-
----
-
-## Known Limitations
-
-1. **Dark mode requires "Dark" mode name** — Case-insensitive search
-2. **Default system frame variable** — Must exist in local or library variables
-3. **Translation 50-item limit** — Each translation call limited to 50 text nodes (loop for more)
-4. **Art task requires component** — Searches current page only, not entire file
-5. **Export uses file's current theme** — Dark copies are separate frames (manual export both)
+A Code button stores `script = { ops: [...] }`. `runScript()` runs each op on every selected node
+via `applyScriptOp()` (whitelist — **safe, no eval**). Ops:
+`move{dx,dy}` · `pos{x,y}` · `resize{w,h}` · `opacity{value}` · `rotate{deg}` · `corner{value}` ·
+`fill{color,opacity}` · `stroke{color,weight}` · `visible{value}` · `lock{value}` ·
+`rename{name}` (tokens `{w} {h} {i} {name}`) · `text{value}`.
+To add an op: extend `applyScriptOp` (and the `SCRIPT_HINT` string in ui.html).
 
 ---
 
-## Testing Checklist for New Features
+## 7. Figma mockups (file `qIj6SJodJkTXNoKwZn4USF`, Page 2 = node `64:1264`)
 
-- [ ] Selection-info listener fires on every change
-- [ ] Button enable/disable matches RULES
-- [ ] fitSize() called after toolbar rebuild
-- [ ] Messages post correctly (check network tab)
-- [ ] clientStorage persists across close/reopen
-- [ ] Theme toggle updates colors immediately
-- [ ] Drag reorder saves order to storage
-- [ ] Window positioning respects zoom + viewport
-- [ ] FAQ/Settings/Languages panels close properly with back button
+Component-based, built via the Figma `use_figma` MCP tool. See memory `project_figma_mockups`.
+- Section **"KB Components"**: `icon/*` (26 outline icon components) + `btn/*` (button components,
+  each containing an icon instance) + `btn/clawd`/`btn/expand`/`btn/arrow`.
+- Board **"Kiss Booster — UI"** (dark) + **"Kiss Booster — UI · Light"**: 9 state tiles each,
+  assembled from `btn/*` instances. Variable collection **"Kiss Booster Tokens"** (Dark/Light modes).
+- **Gotchas:** wrap `use_figma` code in try/catch + `let out=null` (strict mode rejects undeclared
+  assignment); `createNodeFromSvg` returns a FRAME with a default fill → clear the wrapper's fill,
+  keep only strokes for outline icons; pass full `<path d="...">`, never raw path data; nodes that
+  visually overlap a SECTION get auto-adopted into it; `clone()` can land on the wrong page — set
+  `figma.currentPage`/`appendChild` to the intended page.
+
+---
+
+## 8. Conventions
+
+- Match surrounding code style (compact, vanilla). ui.html uses CSS variables + `body.light` for theme.
+- Icon set is the `IC` map in ui.html (`S(d)` builds an 18×18 outline SVG). New icon → add to `IC`.
+- Keep this doc and `THIRD_PARTY_NOTICES.md` current when adding features/assets.
+- **This file + the root `CLAUDE.md` are the source of truth** for the plugin.
